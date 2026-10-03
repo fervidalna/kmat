@@ -1,0 +1,241 @@
+// K-MAT IA - Modelo relacional para dbdiagram.io
+// Fuente de verdad ejecutable: migrations/20260930160000_kmat_schema.sql
+
+Table perfil {
+  id_usuario uuid [pk, note: 'FK a auth.users(id) de Supabase']
+  nombre_mostrado varchar
+  estado varchar
+  creado_en timestamptz
+  actualizado_en timestamptz
+  version_registro int
+}
+
+Table rol {
+  codigo varchar [pk]
+  descripcion varchar
+}
+
+Table usuario_rol {
+  id_usuario uuid [ref: > perfil.id_usuario]
+  codigo_rol varchar [ref: > rol.codigo]
+  asignado_en timestamptz
+  indexes { (id_usuario, codigo_rol) [pk] }
+}
+
+Table nivel_educativo {
+  codigo varchar [pk]
+  nombre varchar
+  orden int
+}
+
+Table nivel_aprendizaje {
+  id_nivel uuid [pk]
+  codigo varchar [unique]
+  nombre varchar
+  orden int [unique]
+  activo boolean
+}
+
+Table estudiante {
+  id_estudiante uuid [pk]
+  nombre_mostrado varchar
+  avatar_url varchar
+  codigo_nivel_educativo varchar [ref: > nivel_educativo.codigo]
+  estado varchar
+  creado_en timestamptz
+  actualizado_en timestamptz
+  version_registro int
+}
+
+Table responsable_estudiante {
+  id_estudiante uuid [ref: > estudiante.id_estudiante]
+  id_responsable uuid [ref: > perfil.id_usuario]
+  tipo_vinculo varchar
+  es_principal boolean
+  activo boolean
+  creado_en timestamptz
+  indexes { (id_estudiante, id_responsable) [pk] }
+}
+
+Table grupo {
+  id_grupo uuid [pk]
+  nombre varchar
+  codigo_union varchar [unique]
+  estado varchar
+  creado_en timestamptz
+  actualizado_en timestamptz
+}
+
+Table docente_grupo {
+  id_docente uuid [ref: > perfil.id_usuario]
+  id_grupo uuid [ref: > grupo.id_grupo]
+  tipo_participacion varchar
+  activo boolean
+  fecha_inicio timestamptz
+  fecha_fin timestamptz
+  indexes { (id_docente, id_grupo) [pk] }
+}
+
+Table inscripcion_grupo {
+  id_inscripcion uuid [pk]
+  id_grupo uuid [ref: > grupo.id_grupo]
+  id_estudiante uuid [ref: > estudiante.id_estudiante]
+  estado varchar
+  fecha_inicio timestamptz
+  fecha_fin timestamptz
+}
+
+Table consentimiento {
+  id_consentimiento uuid [pk]
+  id_estudiante uuid
+  id_responsable uuid
+  proposito varchar
+  version_documento varchar
+  estado varchar
+  otorgado_en timestamptz
+  revocado_en timestamptz
+}
+Ref: consentimiento.(id_estudiante, id_responsable) > responsable_estudiante.(id_estudiante, id_responsable)
+
+Table contenido {
+  id_contenido uuid [pk]
+  codigo varchar [unique]
+  nombre varchar
+  descripcion varchar
+  orden int
+  activo boolean
+}
+
+Table contenido_nivel_educativo {
+  id_contenido uuid [ref: > contenido.id_contenido]
+  codigo_nivel_educativo varchar [ref: > nivel_educativo.codigo]
+  indexes { (id_contenido, codigo_nivel_educativo) [pk] }
+}
+
+Table ejercicio {
+  id_ejercicio uuid [pk]
+  codigo varchar [unique]
+  creado_en timestamptz
+  retirado_en timestamptz
+}
+
+Table ejercicio_version {
+  id_ejercicio_version uuid [pk]
+  id_ejercicio uuid [ref: > ejercicio.id_ejercicio]
+  numero_version int
+  id_contenido uuid [ref: > contenido.id_contenido]
+  id_nivel uuid [ref: > nivel_aprendizaje.id_nivel]
+  tipo_ejercicio varchar
+  tipo_respuesta varchar
+  enunciado varchar
+  solucion jsonb
+  configuracion jsonb
+  dificultad int
+  estado varchar
+  indexes { (id_ejercicio, numero_version) [unique] }
+}
+
+Table recurso_apoyo {
+  id_recurso uuid [pk]
+  id_contenido uuid [ref: > contenido.id_contenido]
+  tipo_recurso varchar
+  titulo varchar
+  recurso_uri varchar
+  etapa_apoyo int
+  disponible_offline boolean
+  activo boolean
+}
+
+Table sesion_aprendizaje {
+  id_sesion uuid [pk]
+  id_estudiante uuid [ref: > estudiante.id_estudiante]
+  tipo_sesion varchar
+  estado varchar
+  inicio_en timestamptz
+  fin_en timestamptz
+  indexes { (id_sesion, id_estudiante) [unique] }
+}
+
+Table resultado_diagnostico {
+  id_sesion uuid [pk]
+  id_estudiante uuid
+  id_nivel_asignado uuid [ref: > nivel_aprendizaje.id_nivel]
+  regla_version varchar
+  calculado_en timestamptz
+}
+Ref: resultado_diagnostico.(id_sesion, id_estudiante) > sesion_aprendizaje.(id_sesion, id_estudiante)
+
+Table refuerzo_docente {
+  id_refuerzo uuid [pk]
+  id_docente uuid [ref: > perfil.id_usuario]
+  id_estudiante uuid [ref: > estudiante.id_estudiante]
+  id_contenido uuid [ref: > contenido.id_contenido]
+  id_recurso uuid [ref: > recurso_apoyo.id_recurso]
+  tipo_refuerzo varchar
+  cantidad_ejercicios int
+  estado varchar
+  asignado_en timestamptz
+  indexes { (id_refuerzo, id_estudiante) [unique] }
+}
+
+Table asignacion_ejercicio {
+  id_asignacion uuid [pk]
+  id_estudiante uuid [ref: > estudiante.id_estudiante]
+  id_ejercicio_version uuid [ref: > ejercicio_version.id_ejercicio_version]
+  id_sesion uuid
+  id_refuerzo uuid
+  origen varchar
+  prioridad int
+  estado varchar
+  asignado_en timestamptz
+  indexes { (id_asignacion, id_estudiante) [unique] }
+}
+Ref: asignacion_ejercicio.(id_sesion, id_estudiante) > sesion_aprendizaje.(id_sesion, id_estudiante)
+Ref: asignacion_ejercicio.(id_refuerzo, id_estudiante) > refuerzo_docente.(id_refuerzo, id_estudiante)
+
+Table intento_ejercicio {
+  id_intento uuid [pk]
+  id_asignacion uuid [ref: > asignacion_ejercicio.id_asignacion]
+  numero_intento int
+  respuesta_reconocida varchar
+  respuesta_final jsonb
+  confianza_reconocimiento decimal
+  es_correcta boolean
+  tiempo_respuesta_ms int
+  respondido_en timestamptz
+  indexes { (id_asignacion, numero_intento) [unique] (id_intento, id_asignacion) [unique] }
+}
+
+Table deteccion_dificultad {
+  id_deteccion uuid [pk]
+  id_asignacion uuid [ref: > asignacion_ejercicio.id_asignacion]
+  tipo_deteccion varchar
+  nivel_severidad varchar
+  estado varchar
+  detectado_en timestamptz
+  indexes { (id_deteccion, id_asignacion) [unique] }
+}
+
+Table intervencion_apoyo {
+  id_intervencion uuid [pk]
+  id_asignacion uuid [ref: > asignacion_ejercicio.id_asignacion]
+  id_intento uuid
+  id_deteccion uuid
+  id_recurso uuid [ref: > recurso_apoyo.id_recurso]
+  origen varchar
+  resultado varchar
+  mostrado_en timestamptz
+}
+Ref: intervencion_apoyo.(id_intento, id_asignacion) > intento_ejercicio.(id_intento, id_asignacion)
+Ref: intervencion_apoyo.(id_deteccion, id_asignacion) > deteccion_dificultad.(id_deteccion, id_asignacion)
+
+Table auditoria {
+  id_auditoria bigint [pk]
+  id_actor uuid [ref: > perfil.id_usuario]
+  entidad varchar
+  id_entidad uuid
+  accion varchar
+  datos_anteriores jsonb
+  datos_nuevos jsonb
+  creado_en timestamptz
+}

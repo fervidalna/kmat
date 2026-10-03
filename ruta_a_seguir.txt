@@ -1,0 +1,305 @@
+K-MAT IA
+HOJA DE RUTA DE DESARROLLO
+Módulos, objetivos, entregables y control de avance
+Objetivo de uso
+Avanzar de forma correlativa y marcar cada objetivo cuando esté realmente funcional. No se considera terminado un módulo solo porque exista su pantalla: debe cumplir su entregable.
+CONTROL GENERAL DE AVANCE
+Marca una casilla cuando el módulo esté terminado y probado.
+Objetivo: Dejar creada la estructura técnica sobre la que se construirá toda la aplicación.
+Checklist
+☐ Crear proyecto Android en Kotlin.
+☐ Configurar Jetpack Compose.
+☐ Definir navegación entre pantallas.
+☐ Aplicar MVVM + Clean Architecture.
+☐ Crear estructura de modelos, repositorios y casos de uso.
+☐ Crear componentes visuales reutilizables.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Definir desde el inicio las entidades y relaciones que usarán Room y Supabase/PostgreSQL.
+Checklist
+☐ Definir Usuario, Estudiante, Docente y Responsable.
+☐ Definir Nivel, Contenido, Tipo de ejercicio y Ejercicio.
+☐ Definir Sesión, Respuesta, Diagnóstico y Progreso.
+☐ Definir Grupo/Sala, Asignación y Reporte.
+☐ Definir identificadores y relaciones entre entidades.
+☐ Alinear modelo local Room con modelo remoto PostgreSQL.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Construir el conjunto inicial de ejercicios que utilizará el MVP.
+Checklist
+☐ Definir contenidos NT1 y NT2.
+☐ Clasificar ejercicios por contenido, habilidad, nivel y dificultad.
+☐ Crear ejercicios iniciales de conteo, reconocimiento numérico, adición y sustracción.
+☐ Definir respuesta correcta y metadatos de cada ejercicio.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Crear el flujo mínimo para presentar y resolver ejercicios.
+Checklist
+☐ Obtener un ejercicio.
+☐ Mostrar el ejercicio en pantalla.
+☐ Recibir una respuesta.
+☐ Comprobar la respuesta.
+☐ Mostrar correcto o incorrecto.
+☐ Pasar al siguiente ejercicio.
+☐ Registrar el resultado de la interacción.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Permitir que el estudiante responda directamente en la tablet con dedo o lápiz.
+Checklist
+☐ Crear área de escritura.
+☐ Capturar trazos.
+☐ Permitir borrar.
+☐ Permitir rehacer o limpiar la respuesta.
+☐ Preparar los trazos para reconocimiento.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Transformar los trazos escritos por el estudiante en una respuesta interpretable por la aplicación.
+Checklist
+☐ Integrar ML Kit Digital Ink.
+☐ Reconocer dígitos 0–9.
+☐ Probar números de dos cifras.
+☐ Gestionar resultados ambiguos.
+☐ Manejar errores de reconocimiento.
+☐ Validar funcionamiento con dedo y lápiz digital.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Comparar la respuesta reconocida con la respuesta correcta y entregar retroalimentación.
+Checklist
+☐ Comparar respuesta del estudiante con respuesta esperada.
+☐ Mostrar mensaje correcto/incorrecto.
+☐ Permitir nuevo intento cuando corresponda.
+☐ Preparar reglas para retroalimentación inmediata.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Guardar localmente el desempeño del estudiante y permitir funcionamiento offline.
+Checklist
+☐ Configurar Room/SQLite.
+☐ Guardar estudiante y ejercicio.
+☐ Guardar respuesta entregada y respuesta correcta.
+☐ Guardar correcto/incorrecto.
+☐ Guardar cantidad de intentos.
+☐ Guardar tiempo de resolución.
+☐ Guardar fecha, nivel y contenido.
+☐ Guardar sesiones de práctica.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Incorporar usuarios reales y persistencia principal en la nube.
+Checklist
+☐ Crear proyecto en Supabase.
+☐ Definir tablas en PostgreSQL.
+☐ Configurar Supabase Auth.
+☐ Crear roles: estudiante, docente y responsable.
+☐ Conectar la app con Supabase mediante repositorios.
+☐ Definir Storage si se requieren recursos educativos.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Proteger la información y limitar el acceso según el rol de cada usuario.
+Checklist
+☐ Activar RLS en tablas necesarias.
+☐ Definir políticas para estudiantes.
+☐ Definir políticas para docentes.
+☐ Definir políticas para responsables.
+☐ Evitar acceso directo a datos de otros estudiantes.
+☐ Revisar minimización de datos y privacidad infantil.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Sincronizar los datos guardados en Room con Supabase cuando exista conexión.
+Checklist
+☐ Configurar WorkManager.
+☐ Detectar tareas pendientes de sincronización.
+☐ Enviar datos locales a Supabase.
+☐ Actualizar datos locales cuando corresponda.
+☐ Manejar fallos y reintentos.
+☐ Evitar duplicados básicos.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Determinar el punto de partida del estudiante usando el mismo motor de ejercicios.
+Checklist
+☐ Crear secuencia diagnóstica.
+☐ Evaluar contenidos definidos para el MVP.
+☐ Registrar respuestas del diagnóstico.
+☐ Analizar resultados.
+☐ Asignar nivel inicial.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Decidir qué debe hacer el estudiante después de cada conjunto de respuestas.
+Checklist
+☐ Analizar aciertos y errores.
+☐ Analizar tiempo e intentos.
+☐ Analizar historial reciente.
+☐ Implementar decisión Avanzar.
+☐ Implementar decisión Mantener.
+☐ Implementar decisión Reforzar.
+☐ Definir reglas simples y explicables para el MVP.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Detectar patrones que indiquen posible estancamiento o necesidad de apoyo.
+Checklist
+☐ Detectar errores consecutivos.
+☐ Detectar exceso de intentos.
+☐ Detectar tiempo elevado.
+☐ Considerar desempeño reciente.
+☐ Generar evento de dificultad sin afirmar falta de concentración.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Intervenir de forma gradual cuando el estudiante presenta dificultad persistente.
+Checklist
+☐ Permitir nuevo intento.
+☐ Mostrar pista.
+☐ Ofrecer ejercicio más sencillo o alternativo.
+☐ Activar pausa activa breve.
+☐ Mostrar material o video de apoyo cuando corresponda.
+☐ Retornar al flujo de aprendizaje.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Mostrar al estudiante y/o responsable un resumen claro de su avance.
+Checklist
+☐ Mostrar nivel actual.
+☐ Mostrar ejercicios realizados.
+☐ Mostrar aciertos y errores.
+☐ Mostrar porcentaje de logro.
+☐ Mostrar progreso semanal.
+☐ Mostrar contenidos trabajados y reforzados.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Permitir que un profesor supervise estudiantes sin convertir la app en una videollamada.
+Checklist
+☐ Crear grupos o salas.
+☐ Vincular estudiantes.
+☐ Mostrar listado de estudiantes.
+☐ Mostrar progreso individual.
+☐ Mostrar errores frecuentes.
+☐ Mostrar tiempos y contenidos trabajados.
+☐ Mostrar dificultades detectadas.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Permitir que el profesor intervenga asignando ejercicios o refuerzos concretos.
+Checklist
+☐ Seleccionar estudiante o grupo.
+☐ Seleccionar contenido.
+☐ Definir cantidad de ejercicios.
+☐ Crear tarea o refuerzo.
+☐ Mostrar la asignación en la app del estudiante.
+☐ Registrar cumplimiento.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Generar reportes individuales y grupales utilizando los datos acumulados.
+Checklist
+☐ Incluir estudiante y nivel actual.
+☐ Incluir ejercicios realizados.
+☐ Incluir aciertos, errores y tiempo promedio.
+☐ Incluir contenidos dominados y a reforzar.
+☐ Generar reporte individual.
+☐ Generar reporte grupal.
+☐ Exportar PDF.
+☐ Exportar Excel.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Permitir mantener los elementos esenciales del sistema sin construir un panel excesivamente complejo.
+Checklist
+☐ Gestionar niveles.
+☐ Gestionar contenidos.
+☐ Gestionar tipos de ejercicio.
+☐ Gestionar ejercicios.
+☐ Gestionar materiales de apoyo.
+☐ Definir qué tareas se administrarán desde la app y cuáles directamente en Supabase durante el MVP.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Agregar inteligencia generativa como complemento, sin convertirla en dependencia del sistema.
+Checklist
+☐ Generar explicaciones opcionales.
+☐ Sugerir refuerzos.
+☐ Generar mensajes motivacionales.
+☐ Apoyar recomendaciones docentes.
+☐ Mantener datos identificables fuera de servicios externos cuando corresponda.
+☐ Asegurar que el motor adaptativo siga funcionando sin Gemini.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+Objetivo: Validar el recorrido completo y dejar una versión demostrable y estable.
+Checklist
+☐ Probar navegación.
+☐ Probar ejercicios y corrección.
+☐ Probar escritura y ML Kit.
+☐ Probar Room y sincronización.
+☐ Probar diagnóstico y adaptación.
+☐ Probar roles y seguridad.
+☐ Probar sala, asignaciones y reportes.
+☐ Corregir errores.
+☐ Preparar datos y escenario de demostración final.
+Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
+RECORRIDO FINAL QUE DEBE FUNCIONAR
+Estudiante entra
+↓
+Realiza diagnóstico
+↓
+Recibe nivel
+↓
+Practica
+↓
+Escribe en tablet
+↓
+La respuesta se reconoce y corrige automáticamente
+↓
+El sistema registra el desempeño
+↓
+Adapta la dificultad
+↓
+Detecta dificultades
+↓
+Ofrece apoyo
+↓
+Guarda y sincroniza progreso
+↓
+Profesor revisa desempeño
+↓
+Profesor asigna refuerzo
+↓
+Se genera reporte
+Arquitectura de referencia | Kotlin + Jetpack Compose  →  ML Kit Digital Ink  →  Room / SQLite  →  WorkManager  →  Supabase (Auth + PostgreSQL + Storage + Edge Functions)
+Estado | N° | Módulo | Entregable principal
+☐ | 1 | Base del proyecto | La aplicación abre correctamente y permite navegar entre pantallas base.
+☐ | 2 | Modelo de dominio y datos | Modelo de datos definido y preparado para persistencia local y nube.
+☐ | 3 | Banco de contenidos y ejercicios | Banco inicial de ejercicios disponible para ser consumido por la app.
+☐ | 4 | Motor básico de ejercicios | Se puede completar una sesión básica de ejercicios sin escritura manuscrita.
+☐ | 5 | Escritura digital | El estudiante puede escribir números en pantalla y la app captura los trazos correctamente.
+☐ | 6 | Reconocimiento manuscrito con ML Kit | La app reconoce la respuesta escrita y obtiene un valor utilizable por el motor de corrección.
+☐ | 7 | Corrección automática | Cada respuesta puede corregirse automáticamente de forma consistente.
+☐ | 8 | Room / registro local de respuestas | Las respuestas y sesiones quedan almacenadas localmente aunque no exista Internet.
+☐ | 9 | Supabase + PostgreSQL + Auth | Usuarios y datos principales pueden persistirse en la nube.
+☐ | 10 | Seguridad y Row Level Security | Cada usuario solo puede acceder a la información que le corresponde.
+☐ | 11 | Sincronización offline con WorkManager | El estudiante puede trabajar offline y los datos se sincronizan al recuperar Internet.
+☐ | 12 | Diagnóstico inicial | Al terminar el diagnóstico, el estudiante queda ubicado en un nivel inicial.
+☐ | 13 | Motor adaptativo | El sistema modifica la dificultad o el contenido según el desempeño.
+☐ | 14 | Detección de dificultad | La aplicación puede identificar cuándo conviene activar apoyo adicional.
+☐ | 15 | Apoyo progresivo y pausa activa | Existe una secuencia de apoyo clara para reducir frustración y continuar aprendiendo.
+☐ | 16 | Progreso del estudiante | La app presenta información comprensible sobre el avance del estudiante.
+☐ | 17 | Sala / seguimiento docente | El profesor puede revisar el desempeño de los estudiantes vinculados.
+☐ | 18 | Asignaciones docentes | El estudiante recibe y completa actividades asignadas por el profesor.
+☐ | 19 | Reportes PDF / Excel | Los datos de progreso pueden exportarse en los formatos requeridos.
+☐ | 20 | Administración básica | Los contenidos esenciales pueden mantenerse y actualizarse.
+☐ | 21 | Gemini / IA generativa opcional | La IA generativa aporta valor adicional, pero la app funciona completamente sin ella.
+☐ | 22 | Pruebas, correcciones y cierre del MVP | MVP completo funcionando de punta a punta y listo para presentación.
+1 | BASE DEL PROYECTO
+Criterio para marcar COMPLETADO: La aplicación abre correctamente y permite navegar entre pantallas base.
+2 | MODELO DE DOMINIO Y DATOS
+Criterio para marcar COMPLETADO: Modelo de datos definido y preparado para persistencia local y nube.
+3 | BANCO DE CONTENIDOS Y EJERCICIOS
+Criterio para marcar COMPLETADO: Banco inicial de ejercicios disponible para ser consumido por la app.
+4 | MOTOR BÁSICO DE EJERCICIOS
+Criterio para marcar COMPLETADO: Se puede completar una sesión básica de ejercicios sin escritura manuscrita.
+5 | ESCRITURA DIGITAL
+Criterio para marcar COMPLETADO: El estudiante puede escribir números en pantalla y la app captura los trazos correctamente.
+6 | RECONOCIMIENTO MANUSCRITO CON ML KIT
+Criterio para marcar COMPLETADO: La app reconoce la respuesta escrita y obtiene un valor utilizable por el motor de corrección.
+7 | CORRECCIÓN AUTOMÁTICA
+Criterio para marcar COMPLETADO: Cada respuesta puede corregirse automáticamente de forma consistente.
+8 | ROOM / REGISTRO LOCAL DE RESPUESTAS
+Criterio para marcar COMPLETADO: Las respuestas y sesiones quedan almacenadas localmente aunque no exista Internet.
+9 | SUPABASE + POSTGRESQL + AUTH
+Criterio para marcar COMPLETADO: Usuarios y datos principales pueden persistirse en la nube.
+10 | SEGURIDAD Y ROW LEVEL SECURITY
+Criterio para marcar COMPLETADO: Cada usuario solo puede acceder a la información que le corresponde.
+11 | SINCRONIZACIÓN OFFLINE CON WORKMANAGER
+Criterio para marcar COMPLETADO: El estudiante puede trabajar offline y los datos se sincronizan al recuperar Internet.
+12 | DIAGNÓSTICO INICIAL
+Criterio para marcar COMPLETADO: Al terminar el diagnóstico, el estudiante queda ubicado en un nivel inicial.
+13 | MOTOR ADAPTATIVO
+Criterio para marcar COMPLETADO: El sistema modifica la dificultad o el contenido según el desempeño.
+14 | DETECCIÓN DE DIFICULTAD
+Criterio para marcar COMPLETADO: La aplicación puede identificar cuándo conviene activar apoyo adicional.
+15 | APOYO PROGRESIVO Y PAUSA ACTIVA
+Criterio para marcar COMPLETADO: Existe una secuencia de apoyo clara para reducir frustración y continuar aprendiendo.
+16 | PROGRESO DEL ESTUDIANTE
+Criterio para marcar COMPLETADO: La app presenta información comprensible sobre el avance del estudiante.
+17 | SALA / SEGUIMIENTO DOCENTE
+Criterio para marcar COMPLETADO: El profesor puede revisar el desempeño de los estudiantes vinculados.
+18 | ASIGNACIONES DOCENTES
+Criterio para marcar COMPLETADO: El estudiante recibe y completa actividades asignadas por el profesor.
+19 | REPORTES PDF / EXCEL
+Criterio para marcar COMPLETADO: Los datos de progreso pueden exportarse en los formatos requeridos.
+20 | ADMINISTRACIÓN BÁSICA
+Criterio para marcar COMPLETADO: Los contenidos esenciales pueden mantenerse y actualizarse.
+21 | GEMINI / IA GENERATIVA OPCIONAL
+Criterio para marcar COMPLETADO: La IA generativa aporta valor adicional, pero la app funciona completamente sin ella.
+22 | PRUEBAS, CORRECCIONES Y CIERRE DEL MVP
+Criterio para marcar COMPLETADO: MVP completo funcionando de punta a punta y listo para presentación.
+PRIMER HITO RECOMENDADO | Inicio → ejercicio 7 + 5 → escribir 12 → ML Kit reconoce “12” → comprobar → mostrar “Correcto” → guardar en Room. | Cuando este flujo funcione, ya existe un núcleo técnico real sobre el cual construir el resto del proyecto.

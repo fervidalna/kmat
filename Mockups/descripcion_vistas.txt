@@ -1,0 +1,13 @@
+Vista de inicio
+Es la pantalla principal de K-Mat IA, desde donde el estudiante accede a las funciones principales de la aplicación. Muestra el nombre de la app, un saludo personalizado y un botón central para comenzar o continuar aprendiendo.
+También incluye accesos a Configuración, Mi progreso, Cambiar perfil y Acceso adulto. Su objetivo es ofrecer una navegación simple, visual y adecuada para niños.
+
+Vista de ejercicios
+Esta pantalla corresponde al espacio donde el estudiante resuelve las actividades matemáticas. Muestra el nombre y perfil del alumno, un indicador de avance y la opción de salir.
+El ejercicio presenta una instrucción clara, apoyo de audio, elementos visuales para resolver la actividad y un área donde el estudiante puede escribir su respuesta con el dedo o lápiz digital.
+También incluye los botones Borrar y Comprobar, además de mensajes motivacionales que acompañan al estudiante durante la actividad. Su objetivo es ofrecer una experiencia de práctica simple, visual e interactiva.
+
+Vista de pausa activa
+Esta pantalla aparece durante la sesión de ejercicios cuando el sistema propone una pausa activa. Presenta una actividad física breve y sencilla, acompañada de instrucciones visuales y mensajes motivacionales.
+En el ejemplo, se solicita al estudiante levantarse y saltar tres veces, mostrando el conteo de la actividad. Al finalizar, el botón Continuar permite retomar los ejercicios desde el punto en que se encontraban.
+Su objetivo es favorecer pequeños descansos durante el aprendizaje y luego permitir que el estudiante continúe con su sesión.

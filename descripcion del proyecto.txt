@@ -1,0 +1,145 @@
+# K-Mat IA
+
+### Aprendizaje matemático autónomo, adaptativo y acompañado
+
+**K-Mat IA** es una aplicación de refuerzo matemático para niños que permite practicar a su propio ritmo mediante ejercicios personalizados, escritura digital, corrección automática y adaptación según su desempeño. **Complementa la educación escolar y no busca reemplazar al profesor.**
+
+## 1. Diagnóstico inicial
+
+El estudiante realiza actividades para identificar:
+
+* Lo que domina.
+* Lo que está aprendiendo.
+* Lo que necesita reforzar.
+
+**La app determina su punto de partida.**
+
+## 2. Ejercicios personalizados
+
+Según su nivel y desempeño, recibe actividades adecuadas a sus necesidades.
+
+**Cada estudiante avanza a su propio ritmo.**
+
+## 3. Responde directamente en la tablet
+
+El niño puede resolver las actividades utilizando:
+
+✍️ **Dedo o lápiz digital**
+
+Sin depender constantemente de teclado o adulto.
+
+## 4. Reconocimiento y corrección automática
+
+La aplicación reconoce la respuesta y entrega **retroalimentación inmediata**.
+
+Además registra:
+**respuestas · errores · intentos · tiempo · contenido · progreso**
+
+## 5. Motor adaptativo + IA
+
+El sistema analiza el desempeño y decide qué hacer después:
+
+**Avanzar → Mantener → Reforzar → Apoyar**
+
+La IA complementa el proceso, mientras las decisiones importantes pueden mantenerse bajo reglas pedagógicas definidas.
+
+## 6. Detecta posibles dificultades
+
+La app identifica patrones que podrían indicar **dificultad o estancamiento**, considerando:
+
+⏱ Tiempo de respuesta
+❌ Errores consecutivos
+🔄 Cantidad de intentos
+📊 Desempeño reciente
+
+No afirma que el niño esté desconcentrado: detecta señales que indican que podría necesitar apoyo.
+
+## 7. Pausas activas
+
+Si detecta dificultad persistente, puede cambiar momentáneamente la dinámica:
+
+🤸 Saltar
+🙆 Levantar los brazos
+🕺 Bailar unos segundos
+🧘 Estirarse
+
+Luego, el niño vuelve a intentarlo.
+
+## 8. Apoyo progresivo
+
+Si la dificultad continúa:
+
+**Pausa activa → Nuevo intento → Pista → Actividad alternativa → Juego matemático → Refuerzo → Video o material de apoyo**
+
+El objetivo es **evitar frustración y mantener la continuidad del aprendizaje**.
+
+## 9. Aprendizaje autónomo
+
+K-Mat IA automatiza gran parte del proceso:
+
+**Presenta → Reconoce → Corrige → Registra → Analiza → Adapta → Refuerza**
+
+El estudiante puede avanzar sin necesitar supervisión permanente.
+
+## 10. Seguimiento del profesor
+
+El profesor puede vincularse al estudiante mediante una **sala o grupo de seguimiento**.
+
+No es una videollamada ni una clase virtual.
+
+Puede revisar:
+
+📈 Progreso
+❌ Errores frecuentes
+⏱ Tiempo de resolución
+📚 Contenidos trabajados
+⚠️ Dificultades detectadas
+
+## 11. Intervención docente
+
+Cuando lo considere necesario, el profesor puede solicitar:
+
+➕ Más ejercicios
+🎮 Actividad alternativa
+🎥 Video explicativo
+📖 Material de apoyo
+
+La aplicación incorpora ese refuerzo en las próximas actividades.
+
+## DOS FORMAS DE APRENDER
+
+### 🤖 Vía autónoma
+
+K-Mat IA administra automáticamente la ejercitación, corrección y adaptación.
+
+### 👩‍🏫 Vía acompañada
+
+El niño continúa trabajando autónomamente, mientras el profesor revisa su progreso e interviene cuando sea necesario.
+
+# FLUJO GENERAL
+
+**Diagnóstico**
+↓
+**Nivel del estudiante**
+↓
+**Ejercicios personalizados**
+↓
+**Respuesta en tablet**
+↓
+**Corrección automática**
+↓
+**Análisis del desempeño**
+↓
+**Avanzar / Mantener / Reforzar**
+↓
+**Detección de dificultad**
+↓
+**Pausa activa + apoyo**
+↓
+**Trayectoria personalizada**
+↓
+**Seguimiento del profesor**
+
+### Idea central
+
+**La tecnología automatiza la práctica, corrección, adaptación y seguimiento cotidiano; el profesor conserva el rol pedagógico y K-Mat IA complementa la educación que el niño recibe en la escuela.**

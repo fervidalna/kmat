@@ -1,0 +1,115 @@
+KUMON IA
+
+Plataforma educativa adaptativa de matemáticas
+
+↓
+
+APP MÓVIL ANDROID
+
+Kotlin + Jetpack Compose
+Aplicación para estudiantes y docentes
+
+Kotlin
+Jetpack Compose
+
+↓
+
+Interfaz móvil
+
+Pantallas y experiencia de usuario para estudiantes y docentes
+
+Escritura digital
+
+Captura de trazos con dedo o lápiz digital
+
+Lógica App
+
+Arquitectura MVVM + Clean Architecture
+Gestión de estados, repositorios y casos de uso
+
+↓
+
+ML Kit Digital Ink
+
+Reconocimiento local de escritura
+(números, signos y símbolos)
+
+↓
+
+Motor adaptativo
+
+Reglas de negocio
+Analiza el desempeño y decide avanzar, mantener, reforzar o retroceder
+
+↓
+
+Room / SQLite
+
+Almacenamiento local
+Ejercicios, sesiones, respuestas y progreso temporalmente (modo offline)
+
+↓
+
+WorkManager / Sync
+
+Sincronización de datos
+Sincroniza la información local con Supabase cuando hay conexión a Internet
+
+↓
+
+Internet disponible
+
+↓
+
+Supabase
+Backend en la nube
+
+Servicios, base de datos y lógica del servidor
+
+Auth
+
+Autenticación y control de acceso
+
+PostgreSQL
+
+Base de datos principal
+Usuarios, estudiantes, ejercicios, sesiones, progreso, niveles, etc.
+
+Storage
+
+Almacenamiento de archivos y recursos educativos
+
+↓
+
+Edge Functions
+
+Lógica del servidor
+Procesos que no se ejecutan directamente desde la aplicación
+
+↓
+
+Gemini API (opcional)
+
+Apoyo con IA
+Análisis y retroalimentación avanzada (vía backend)
+
+Reportes PDF / Excel
+
+Generación de reportes
+Progreso individual y grupal según requerimientos
+
+Seguridad
+Row Level Security (RLS)
+Protección de datos
+Cumplimiento de privacidad infantil
+Arquitectura escalable
+
+Permite incorporar iOS y otras plataformas en el futuro
+
+MVP enfocado
+Android como prioridad
+Funcionalidad offline-first
+Arquitectura desacoplada
+Lista para futuras integraciones
+
+Ese flujo además coincide con la propuesta técnica del proyecto: Android como plataforma prioritaria, reconocimiento de escritura, motor adaptativo, almacenamiento local, sincronización y backend en Supabase.
