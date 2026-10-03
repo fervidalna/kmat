@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # K-Mat IA
 
 Aplicación Android de refuerzo matemático para niños. Su propósito es complementar el aprendizaje escolar con actividades cortas, respuesta escrita directamente en la pantalla y acompañamiento para responsables y docentes.
@@ -115,3 +116,7 @@ Desde `android-app`, se ejecutan con:
 - [Operación offline y sincronización](android-app/docs/OFFLINE_FIRST.md)
 - [Navegación](android-app/docs/NAVEGACION.md)
 - [Modelo y operación de base de datos](supabase/DOCUMENTACION_BASE_DE_DATOS.md)
+=======
+# kmat
+K-Mat: aplicación educativa de matemáticas para 1° y 2° básico, con ejercicios adaptativos, reconocimiento de escritura y seguimiento del progreso.
+>>>>>>> 5390f4410ea6eb7d2ee71cf3a851fec39255adbd
