@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -32,8 +33,36 @@ import cl.kmat.ia.presentation.design.KMatPrimaryButton
 fun ActiveBreakScreen(onContinue: () -> Unit) {
     BoxWithConstraints {
         val isTablet = maxWidth >= 840.dp && maxHeight >= 520.dp
+        val phoneLandscape = !isTablet && maxWidth > maxHeight
         KMatBackground {
-            Column(
+            if (phoneLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("¡Hagamos una pequeña pausa!", color = KMatInk, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, textAlign = TextAlign.Center)
+                        Text("Levántate y salta 3 veces", color = KMatInk, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
+                        Text("¡Muy bien! Ahora continuemos.", color = KMatInk, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+                    }
+                    Column(
+                        Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        KMatJumpingMascot(Modifier.size(100.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            repeat(3) { index -> BreakCounter(index + 1, compact = true) }
+                        }
+                        KMatPrimaryButton("Continuar  ›", onContinue, Modifier.widthIn(max = 300.dp).fillMaxWidth())
+                    }
+                }
+            } else Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = if (isTablet) 64.dp else 24.dp, vertical = if (isTablet) 34.dp else 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -69,15 +98,15 @@ fun ActiveBreakScreen(onContinue: () -> Unit) {
 }
 
 @Composable
-private fun BreakCounter(number: Int) {
+private fun BreakCounter(number: Int, compact: Boolean = false) {
     Box(
         modifier = Modifier
-            .size(88.dp)
+            .size(if (compact) 52.dp else 88.dp)
             .clip(CircleShape)
             .background(Color(0xFFEAF9FF))
             .border(2.dp, Color(0xFFB6E4FC), CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Text(number.toString(), color = KMatInk, fontSize = 45.sp, fontWeight = FontWeight.ExtraBold)
+        Text(number.toString(), color = KMatInk, fontSize = if (compact) 28.sp else 45.sp, fontWeight = FontWeight.ExtraBold)
     }
 }

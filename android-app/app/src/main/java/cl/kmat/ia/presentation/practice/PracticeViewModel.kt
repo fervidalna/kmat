@@ -374,8 +374,8 @@ class PracticeViewModel(
                         exerciseIndex = nextExerciseIndex,
                         exercise = nextExercise,
                         answer = "",
-                        countAnswerParts = emptyCountAnswers(state.exercises[nextIndex]),
-                        countStrokesByPart = emptyCountStrokes(state.exercises[nextIndex]),
+                        countAnswerParts = emptyCountAnswers(nextExercise),
+                        countStrokesByPart = emptyCountStrokes(nextExercise),
                         activeCountAnswerIndex = null,
                         strokes = emptyList(),
                         recognitionMessage = null,
@@ -394,7 +394,8 @@ class PracticeViewModel(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.e("KMatPractice", "No se pudo completar el ejercicio ${exercise.id}", error)
                 _uiState.value = _uiState.value.copy(
                     isSaving = false, isRecognizing = false,
                     recognitionMessage = "No pude comprobar la respuesta. Intenta otra vez."

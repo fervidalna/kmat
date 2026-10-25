@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -67,7 +68,52 @@ fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
         label = "jump"
     )
     KMatBackground {
-        Column(
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val phoneLandscape = maxWidth < 840.dp && maxWidth > maxHeight
+            if (phoneLandscape) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(
+                        Modifier.weight(0.9f).verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("¡Sesión completada! 🎉", color = KMatInk, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+                        KMatJumpingMascot(Modifier.size(78.dp))
+                        Text(message, color = KMatInk, fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Text("Completaste $total ${if (total == 1) "ejercicio" else "ejercicios"}", color = KMatInk.copy(alpha = .76f), fontSize = 14.sp, textAlign = TextAlign.Center)
+                        Box(Modifier.size(82.dp).clip(CircleShape).background(KMatGreen), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("$percent%", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("correctas", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        KMatPrimaryButton("Volver al inicio", onHome, Modifier.fillMaxWidth())
+                    }
+                    Column(
+                        Modifier.weight(1.1f).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        Text("Así te fue", color = KMatInk, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        outcomes.forEachIndexed { index, outcome ->
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .background(if (outcome.isCorrect) Color(0xFFEAF7ED) else Color(0xFFFFF4E5)).padding(9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(if (outcome.isCorrect) "⭐" else "💪", fontSize = 18.sp)
+                                Column(Modifier.weight(1f)) {
+                                    Text("${index + 1}. ${outcome.exerciseName}", color = KMatInk, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text("Tu respuesta: ${outcome.answer} · ${if (outcome.isCorrect) "¡Correcta!" else "Respuesta: ${outcome.expectedAnswer}"}", color = KMatInk.copy(alpha = .78f), fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -128,6 +174,7 @@ fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
                 }
             }
             KMatPrimaryButton("Volver al inicio", onHome, Modifier.fillMaxWidth().padding(bottom = 12.dp))
+        }
         }
     }
 }

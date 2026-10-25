@@ -70,6 +70,7 @@ fun StudentProfilesScreen(
     repository: StudentProfilesRepository,
     onSelect: (StudentProfile) -> Unit,
     onBack: () -> Unit,
+    onAuthenticationRequired: () -> Unit = {},
     backLabel: String = "Volver"
 ) {
     val scope = rememberCoroutineScope()
@@ -95,7 +96,12 @@ fun StudentProfilesScreen(
     LaunchedEffect(repository, reloadToken) {
             loading = true
             error = null
-            when (val result = repository.listMine()) {
+            val result = repository.listMine()
+            if (result == StudentProfilesResult.Unauthorized) {
+                onAuthenticationRequired()
+                return@LaunchedEffect
+            }
+            when (result) {
                 is StudentProfilesResult.Success -> {
                     profiles = result.profiles
                     hasLoadedProfiles = true
@@ -131,7 +137,12 @@ fun StudentProfilesScreen(
                             deletionError = null
                             scope.launch {
                                 try {
-                                    when (repository.deleteMine(profile.id)) {
+                                    val result = repository.deleteMine(profile.id)
+                                    if (result == DeleteStudentProfileResult.Unauthorized) {
+                                        onAuthenticationRequired()
+                                        return@launch
+                                    }
+                                    when (result) {
                                         DeleteStudentProfileResult.Success -> {
                                             profiles = profiles.filterNot { it.id == profile.id }
                                             pendingDeletion = null
@@ -191,7 +202,12 @@ fun StudentProfilesScreen(
                         joiningGroup = true
                         joinError = null
                         scope.launch {
-                            when (val result = repository.joinTeachingGroup(profile.id, joinCode)) {
+                            val result = repository.joinTeachingGroup(profile.id, joinCode)
+                            if (result == JoinTeachingGroupResult.Unauthorized) {
+                                onAuthenticationRequired()
+                                return@launch
+                            }
+                            when (result) {
                                 is JoinTeachingGroupResult.Success -> {
                                     successMessage = "${profile.name} se vinculó a la sala ${result.groupName}."
                                     joinCode = ""
@@ -380,7 +396,12 @@ fun StudentProfilesScreen(
                                     scope.launch {
                                         saving = true
                                         error = null
-                                        when (val result = repository.createMine(name, level)) {
+                                        val result = repository.createMine(name, level)
+                                        if (result == CreateStudentProfileResult.Unauthorized) {
+                                            onAuthenticationRequired()
+                                            return@launch
+                                        }
+                                        when (result) {
                                             is CreateStudentProfileResult.Success -> {
                                                 name = ""
                                                 profiles = (profiles + result.profile).distinctBy { it.id }

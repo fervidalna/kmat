@@ -93,7 +93,8 @@ fun KMatNavigation() {
                     authRepository.saveDisplayName(profile.name)
                     navController.goTo(Route.Home)
                 },
-                onBack = navController::navigateUp
+                onBack = navController::navigateUp,
+                onAuthenticationRequired = signOut
             )
         }
         composable(Route.Home) {
@@ -139,10 +140,16 @@ fun KMatNavigation() {
             } else DiagnosticSummaryScreen(report) { navController.goTo(Route.Home) }
         }
         composable(Route.Practice) {
+            val hasAuthenticatedSession = authRepository.hasStoredSession()
             val studentId = authRepository.activeStudentIdOrNull()
             val diagnosticMode = remember(studentId) { mutableStateOf<Boolean?>(null) }
             val schoolLevel = remember(studentId) { mutableStateOf("BASICO_1") }
-            LaunchedEffect(studentId) {
+            LaunchedEffect(studentId, hasAuthenticatedSession) {
+                if (!hasAuthenticatedSession) {
+                    diagnosticMode.value = null
+                    navController.goToLogin()
+                    return@LaunchedEffect
+                }
                 if (studentId != null) {
                     val alreadyDiagnosed = runCatching {
                         application.container.learningSessionRepository.hasCompletedDiagnostic(studentId)
@@ -156,7 +163,12 @@ fun KMatNavigation() {
                     }
                 }
             }
-            if (studentId == null) {
+            if (!hasAuthenticatedSession) {
+                NavigationPlaceholderScreen(
+                    title = "Volviendo al inicio de sesión",
+                    description = "Para continuar, inicia sesión nuevamente."
+                )
+            } else if (studentId == null) {
                 NavigationPlaceholderScreen(
                     title = "Selecciona un perfil",
                     description = "El progreso se guarda por estudiante. Entra al acceso adulto y elige un perfil antes de comenzar.",
@@ -237,6 +249,7 @@ fun KMatNavigation() {
                     navController.goTo(Route.Home)
                 },
                 onBack = signOut,
+                onAuthenticationRequired = signOut,
                 backLabel = "Cerrar cuenta"
             )
         }
@@ -248,7 +261,8 @@ fun KMatNavigation() {
                     authRepository.saveDisplayName(profile.name)
                     navController.goTo(Route.Home)
                 },
-                onBack = navController::navigateUp
+                onBack = navController::navigateUp,
+                onAuthenticationRequired = signOut
             )
         }
         composable(Route.AdultProgress) {

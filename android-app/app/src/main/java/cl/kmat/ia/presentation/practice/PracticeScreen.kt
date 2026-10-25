@@ -143,7 +143,7 @@ internal fun PracticeContent(
                 )
             } else {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val sideBySide = maxWidth >= 600.dp && maxWidth > maxHeight
+                    val sideBySide = maxWidth >= 480.dp && maxWidth > maxHeight
                     val compact = maxHeight < 650.dp
                     val tablet = maxWidth >= 840.dp
                     val isCountExercise = state.exercise?.id?.startsWith("offline-count-") == true
@@ -390,6 +390,18 @@ private fun ExercisePrompt(
                     }
                 }
             }
+            if (sequenceParts.size == 1) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Tu respuesta:", color = KMatInk, fontSize = if (compact) 17.sp else 20.sp, fontWeight = FontWeight.Bold)
+                    CountAnswerSlot(
+                        value = state.countAnswerParts.firstOrNull().orEmpty(),
+                        isActive = state.activeCountAnswerIndex == 0
+                    ) { onCountSlotSelect(0) }
+                }
+            }
         } else {
             Text(state.exercise?.statement ?: "Preparando…", color = KMatInk,
                 fontSize = if (compact) 32.sp else 42.sp, fontWeight = FontWeight.ExtraBold,
@@ -427,7 +439,10 @@ private fun PracticeHeader(
         if (exerciseCount > 0) {
             Text("${if (diagnosticMode) "Diagnóstico · " else ""}${exerciseIndex + 1} / $exerciseCount", color = KMatInk, fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 12.dp))
-            KMatProgress(completed = exerciseIndex + 1, total = exerciseCount)
+            val visibleDots = if (tablet) exerciseCount else minOf(exerciseCount, 4)
+            val completedDots = if (exerciseCount <= visibleDots) exerciseIndex + 1
+                else ((exerciseIndex + 1) * visibleDots / exerciseCount).coerceAtLeast(1)
+            KMatProgress(completed = completedDots, total = visibleDots)
         }
         Spacer(Modifier.weight(1f))
         if (tablet) {

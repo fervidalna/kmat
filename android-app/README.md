@@ -70,7 +70,7 @@ Desde esta carpeta:
 .\gradlew.bat connectedDebugAndroidTest
 ```
 
-El APK de depuración se genera en `app/build/outputs/apk/debug/k-mat-1.0.apk`.
+El APK de depuración se genera en `app/build/outputs/apk/debug/k-mat-1.1.apk`.
 
 ### Generar un APK release firmado
 
@@ -94,7 +94,7 @@ K_MAT_SIGNING_KEY_PASSWORD=...
 ```
 
 Luego ejecuta ` .\gradlew.bat assembleRelease`. El APK firmado queda en
-`app/build/outputs/apk/release/k-mat-1.0.apk`. En GitHub Actions, carga el
+`app/build/outputs/apk/release/k-mat-1.1.apk`. En GitHub Actions, carga el
 keystore codificado en Base64 como `K_MAT_SIGNING_KEYSTORE_BASE64` y los otros
 tres valores como secretos `K_MAT_SIGNING_STORE_PASSWORD`,
 `K_MAT_SIGNING_KEY_ALIAS` y `K_MAT_SIGNING_KEY_PASSWORD`. El workflow publica

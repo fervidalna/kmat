@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val appVersionName = "1.1"
+
 android {
     namespace = "cl.kmat.ia"
     compileSdk = 35
@@ -30,8 +32,8 @@ android {
         applicationId = "cl.kmat.ia"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = appVersionName
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         buildConfigField("String", "SUPABASE_EXERCISE_VERSION_ID", "\"$supabaseExerciseVersionId\"")
@@ -79,7 +81,7 @@ android {
 android.applicationVariants.all {
     outputs.all {
         val apkOutput = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-        apkOutput.outputFileName = "k-mat-1.0.apk"
+        apkOutput.outputFileName = "k-mat-$appVersionName.apk"
     }
 }
 

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -55,13 +57,15 @@ fun HomeScreen(
 
     BoxWithConstraints {
         val isTablet = maxWidth >= 840.dp && maxHeight >= 520.dp
+        val phoneLandscape = !isTablet && maxWidth > maxHeight
         val screenWidth = maxWidth
         KMatBackground {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = if (isTablet) 54.dp else 22.dp, vertical = if (isTablet) 24.dp else 18.dp),
+                    .then(if (isTablet) Modifier else Modifier.verticalScroll(rememberScrollState()))
+                    .padding(horizontal = if (isTablet) 54.dp else 16.dp, vertical = if (isTablet) 24.dp else 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 HomeTopBar(
@@ -74,6 +78,12 @@ fun HomeScreen(
                 }
                 if (isTablet) {
                     TabletHomeContent(screenWidth, displayName, onNavigate, if (studentId != null) ({ showJoinDialog = true }) else null)
+                } else if (phoneLandscape) {
+                    PhoneLandscapeHomeContent(
+                        displayName,
+                        onNavigate,
+                        if (studentId != null) ({ showJoinDialog = true }) else null
+                    )
                 } else {
                     PhoneHomeContent(displayName, onNavigate, if (studentId != null) ({ showJoinDialog = true }) else null)
                 }
@@ -185,6 +195,37 @@ private fun PhoneHomeContent(displayName: String, onNavigate: (String) -> Unit, 
     KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.fillMaxWidth())
     Spacer(Modifier.height(10.dp))
     KMatSecondaryButton("⚙  Acceso adulto", { onNavigate(Route.AdultAuth) }, Modifier.fillMaxWidth())
+}
+
+@Composable
+private fun PhoneLandscapeHomeContent(
+    displayName: String,
+    onNavigate: (String) -> Unit,
+    onJoinRoom: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        KMatMascot(Modifier.weight(0.72f).height(205.dp))
+        Column(
+            modifier = Modifier.weight(1.28f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            WelcomeText(displayName, isTablet = false)
+            KMatPrimaryButton("▶  Continuar aprendiendo", { onNavigate(Route.Practice) }, Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KMatSecondaryButton("⭐  Mi progreso", { onNavigate(Route.Progress) }, Modifier.weight(1f))
+                onJoinRoom?.let { KMatSecondaryButton("Unirse a sala", it, Modifier.weight(1f)) }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.weight(1f))
+                KMatSecondaryButton("⚙  Acceso adulto", { onNavigate(Route.AdultAuth) }, Modifier.weight(1f))
+            }
+        }
+    }
 }
 
 @Composable
