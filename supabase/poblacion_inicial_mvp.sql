@@ -59,9 +59,9 @@ on conflict (id_usuario, codigo_rol) do nothing;
 
 -- Catálogos pedagógicos iniciales del MVP.
 insert into public.nivel_educativo (codigo, nombre, orden) values
-  ('NT1', 'Nivel de Transicion 1', 1),
-  ('NT2', 'Nivel de Transicion 2', 2)
-on conflict (codigo) do nothing;
+  ('BASICO_1', '1° Básico', 1),
+  ('BASICO_2', '2° Básico', 2)
+on conflict (codigo) do update set nombre = excluded.nombre, orden = excluded.orden;
 
 insert into public.nivel_aprendizaje (id_nivel, codigo, nombre, descripcion, orden) values
   ('00000000-0000-0000-0000-000000000101', 'NIVEL_1', 'Números hasta 10', 'Cuenta y reconoce cantidades pequeñas.', 1),
@@ -74,9 +74,9 @@ insert into public.contenido (id_contenido, codigo, nombre, descripcion, orden) 
 on conflict (id_contenido) do nothing;
 
 insert into public.contenido_nivel_educativo (id_contenido, codigo_nivel_educativo) values
-  ('00000000-0000-0000-0000-000000000201', 'NT1'),
-  ('00000000-0000-0000-0000-000000000201', 'NT2'),
-  ('00000000-0000-0000-0000-000000000202', 'NT2')
+  ('00000000-0000-0000-0000-000000000201', 'BASICO_1'),
+  ('00000000-0000-0000-0000-000000000201', 'BASICO_2'),
+  ('00000000-0000-0000-0000-000000000202', 'BASICO_2')
 on conflict do nothing;
 
 -- Recursos disponibles en el dispositivo para acompañar el primer contenido.
@@ -107,7 +107,7 @@ set titulo = excluded.titulo,
 
 -- Niño, responsable, sala y docente.
 insert into public.estudiante (id_estudiante, nombre_mostrado, codigo_nivel_educativo) values
-  ('00000000-0000-0000-0000-000000000301', 'Tomás Pérez', 'NT2')
+  ('00000000-0000-0000-0000-000000000301', 'Tomás Pérez', 'BASICO_2')
 on conflict (id_estudiante) do update
 set nombre_mostrado = excluded.nombre_mostrado,
     codigo_nivel_educativo = excluded.codigo_nivel_educativo,
@@ -129,7 +129,7 @@ from auth.users where email = 'padre.tomas@kmat.local'
 on conflict (id_consentimiento) do nothing;
 
 insert into public.grupo (id_grupo, nombre, codigo_union) values
-  ('00000000-0000-0000-0000-000000000501', 'Sala NT2 A', 'KMTNT2A')
+  ('00000000-0000-0000-0000-000000000501', 'Sala 2° Básico A', 'KMTBAS2A')
 on conflict (id_grupo) do update
 set nombre = excluded.nombre,
     estado = 'ACTIVO',

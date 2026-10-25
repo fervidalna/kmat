@@ -41,8 +41,8 @@ create table public.nivel_educativo (
 );
 
 insert into public.nivel_educativo (codigo, nombre, orden) values
-  ('NT1', 'Nivel de Transicion 1', 1),
-  ('NT2', 'Nivel de Transicion 2', 2)
+  ('BASICO_1', '1° Básico', 1),
+  ('BASICO_2', '2° Básico', 2)
 on conflict (codigo) do nothing;
 
 create table public.nivel_aprendizaje (
@@ -164,7 +164,7 @@ create table public.contenido (
   version_registro integer not null default 1 check (version_registro > 0)
 );
 
--- Un contenido puede trabajarse en NT1 y NT2 sin duplicar su definicion.
+-- Un contenido puede trabajarse en 1° y 2° Básico sin duplicar su definición.
 create table public.contenido_nivel_educativo (
   id_contenido uuid not null references public.contenido(id_contenido) on delete cascade,
   codigo_nivel_educativo text not null references public.nivel_educativo(codigo),

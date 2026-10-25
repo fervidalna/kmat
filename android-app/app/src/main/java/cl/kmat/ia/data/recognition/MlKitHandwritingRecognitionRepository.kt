@@ -23,8 +23,10 @@ class MlKitHandwritingRecognitionRepository : HandwritingRecognitionRepository {
         DigitalInkRecognizerOptions.builder(model).build()
     )
 
+    override suspend fun isReady(): Boolean = modelManager.isModelDownloaded(model).awaitResult()
+
     override suspend fun prepare() {
-        if (!modelManager.isModelDownloaded(model).awaitResult()) {
+        if (!isReady()) {
             modelManager.download(model, DownloadConditions.Builder().build()).awaitResult()
         }
     }

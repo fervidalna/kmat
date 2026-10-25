@@ -25,7 +25,7 @@ Checklist
 Estado:  ☐ Pendiente     ☐ En desarrollo     ☐ Completado     ☐ Probado
 Objetivo: Construir el conjunto inicial de ejercicios que utilizará el MVP.
 Checklist
-☐ Definir contenidos NT1 y NT2.
+☐ Definir contenidos de 1° y 2° Básico.
 ☐ Clasificar ejercicios por contenido, habilidad, nivel y dificultad.
 ☐ Crear ejercicios iniciales de conteo, reconocimiento numérico, adición y sustracción.
 ☐ Definir respuesta correcta y metadatos de cada ejercicio.

@@ -122,8 +122,11 @@ fun KMatSecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = 
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = 56.dp),
         shape = RoundedCornerShape(26.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = KMatInk),
-        border = androidx.compose.foundation.BorderStroke(2.dp, KMatOutline),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = KMatSkyDeep,
+            contentColor = KMatInk
+        ),
+        border = androidx.compose.foundation.BorderStroke(2.dp, KMatInk),
         contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp)
     ) {
         Text(text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -136,13 +139,13 @@ fun KMatProgress(completed: Int, total: Int = 5) {
         modifier = Modifier
             .clip(RoundedCornerShape(28.dp))
             .background(Color.White.copy(alpha = 0.92f))
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         repeat(total) { index ->
             Box(
                 modifier = Modifier
-                    .size(22.dp)
+                    .size(12.dp)
                     .clip(CircleShape)
                     .background(if (index < completed) KMatGreen else Color(0xFFD4DCE5))
             )

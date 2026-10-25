@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import cl.kmat.ia.domain.model.AuthSession
+import cl.kmat.ia.domain.model.UserArea
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -16,12 +17,18 @@ class SecureSessionStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     fun save(session: AuthSession) {
-        preferences.edit()
+        val previousUserId = runCatching {
+            preferences.getString(USER_ID, null)?.let(::decrypt)
+        }.getOrNull()
+        val editor = preferences.edit()
             .putString(ACCESS_TOKEN, encrypt(session.accessToken))
             .putString(REFRESH_TOKEN, encrypt(session.refreshToken))
             .putString(EXPIRES_AT, encrypt(session.expiresAtEpochSeconds.toString()))
             .putString(USER_ID, encrypt(session.userId))
-            .apply()
+        if (previousUserId != null && previousUserId != session.userId) {
+            editor.remove(DISPLAY_NAME).remove(USER_AREA).remove(ACTIVE_STUDENT_ID)
+        }
+        editor.apply()
     }
 
     fun load(): AuthSession? = runCatching {
@@ -36,6 +43,39 @@ class SecureSessionStore(context: Context) {
     }
 
     fun hasSession(): Boolean = load() != null
+
+    fun saveUserArea(area: UserArea) {
+        preferences.edit().putString(USER_AREA, encrypt(area.name)).apply()
+    }
+
+    fun loadUserArea(): UserArea? = runCatching {
+        val value = preferences.getString(USER_AREA, null) ?: return null
+        UserArea.valueOf(decrypt(value))
+    }.getOrNull()
+
+    fun saveDisplayName(displayName: String) {
+        preferences.edit().putString(DISPLAY_NAME, encrypt(displayName)).apply()
+    }
+
+    fun saveActiveStudentId(studentId: String) {
+        preferences.edit().putString(ACTIVE_STUDENT_ID, encrypt(studentId)).apply()
+    }
+
+    fun loadActiveStudentId(): String? = runCatching {
+        preferences.getString(ACTIVE_STUDENT_ID, null)?.let(::decrypt)
+    }.getOrNull()
+
+    fun loadDisplayName(): String? = runCatching {
+        preferences.getString(DISPLAY_NAME, null)?.let(::decrypt)
+    }.getOrNull()
+
+    fun clearDisplayName() {
+        preferences.edit().remove(DISPLAY_NAME).apply()
+    }
+
+    fun clearActiveStudentId() {
+        preferences.edit().remove(ACTIVE_STUDENT_ID).apply()
+    }
 
     fun clear() {
         preferences.edit().clear().apply()
@@ -90,5 +130,8 @@ class SecureSessionStore(context: Context) {
         const val REFRESH_TOKEN = "refresh_token"
         const val EXPIRES_AT = "expires_at"
         const val USER_ID = "user_id"
+        const val USER_AREA = "user_area"
+        const val DISPLAY_NAME = "display_name"
+        const val ACTIVE_STUDENT_ID = "active_student_id"
     }
 }

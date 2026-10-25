@@ -1,6 +1,9 @@
 ﻿package cl.kmat.ia.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -13,12 +16,19 @@ import cl.kmat.ia.presentation.practice.FeedbackScreen
 import cl.kmat.ia.presentation.home.HomeScreen
 import cl.kmat.ia.presentation.common.NavigationPlaceholderScreen
 import cl.kmat.ia.presentation.practice.PracticeScreen
+import cl.kmat.ia.presentation.practice.SessionSummaryScreen
+import cl.kmat.ia.presentation.practice.DiagnosticSummaryScreen
+import cl.kmat.ia.domain.model.DiagnosticReport
+import cl.kmat.ia.domain.model.StudentProfilesResult
+import cl.kmat.ia.presentation.practice.ExerciseOutcome
 import cl.kmat.ia.presentation.auth.LoginScreen
 import cl.kmat.ia.presentation.auth.RegistrationScreen
 import cl.kmat.ia.KMatApplication
 import cl.kmat.ia.presentation.admin.AdministrationScreen
-import cl.kmat.ia.presentation.teacher.TeachingScreen
+import cl.kmat.ia.presentation.teacher.TeacherWorkspaceScreen
+import cl.kmat.ia.presentation.progress.StudentProgressScreen
 import cl.kmat.ia.domain.model.UserArea
+import cl.kmat.ia.presentation.student.StudentProfilesScreen
 import kotlinx.coroutines.launch
 
 object Route {
@@ -28,7 +38,7 @@ object Route {
     const val Teaching = "teaching"
     const val ProfileSelection = "profile-selection"
     const val Home = "home"
-    const val Diagnostic = "diagnostic"
+    const val DiagnosticSummary = "diagnostic-summary"
     const val Practice = "practice"
     const val PracticeFeedback = "practice-feedback"
     const val ActiveBreak = "active-break"
@@ -47,13 +57,22 @@ fun KMatNavigation() {
     val navController = rememberNavController()
     val application = LocalContext.current.applicationContext as KMatApplication
     val authRepository = application.container.authRepository
+    val startDestination = remember {
+        if (authRepository.hasStoredSession()) {
+            authRepository.storedUserAreaOrNull()?.authenticatedRoute() ?: Route.Login
+        } else {
+            Route.Login
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
+    val completedSessionResults = remember { mutableStateOf(emptyList<ExerciseOutcome>()) }
+    val completedDiagnosticReport = remember { mutableStateOf<DiagnosticReport?>(null) }
     val signOut = {
         coroutineScope.launch { authRepository.signOut() }
         navController.goToLogin()
     }
 
-    NavHost(navController = navController, startDestination = Route.Login, modifier = Modifier) {
+    NavHost(navController = navController, startDestination = startDestination, modifier = Modifier) {
         composable(Route.Login) {
             LoginScreen(
                 onAuthenticated = navController::goToAuthenticatedDestination,
@@ -67,60 +86,126 @@ fun KMatNavigation() {
             )
         }
         composable(Route.ProfileSelection) {
-            NavigationPlaceholderScreen(
-                title = "¿Quién va a aprender?",
-                description = "Selecciona el perfil de Tomás para continuar.",
-                primaryLabel = "Usar perfil de Tomás",
-                onPrimary = { navController.goTo(Route.Home) }
-            )
-        }
-        composable(Route.Home) {
-            HomeScreen(onNavigate = navController::goTo, onSignOut = signOut)
-        }
-        composable(Route.Administration) {
-            AdministrationScreen(onSignOut = signOut)
-        }
-        composable(Route.Teaching) {
-            TeachingScreen(onSignOut = signOut)
-        }
-        composable(Route.Diagnostic) {
-            NavigationPlaceholderScreen(
-                title = "Diagnóstico inicial",
-                description = "Aquí se mostrará la sesión de diagnóstico.",
-                primaryLabel = "Comenzar práctica",
-                onPrimary = { navController.goTo(Route.Practice) },
+            StudentProfilesScreen(
+                repository = application.container.studentProfilesRepository,
+                onSelect = { profile ->
+                    authRepository.saveActiveStudentId(profile.id)
+                    authRepository.saveDisplayName(profile.name)
+                    navController.goTo(Route.Home)
+                },
                 onBack = navController::navigateUp
             )
         }
+        composable(Route.Home) {
+            HomeScreen(
+                displayName = authRepository.storedDisplayNameOrNull() ?: "Usuario",
+                studentId = authRepository.activeStudentIdOrNull(),
+                studentProfilesRepository = application.container.studentProfilesRepository,
+                onNavigate = navController::goTo,
+                onSignOut = signOut
+            )
+        }
+        composable(Route.Administration) {
+            val isAdministrator = remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                if (authRepository.validateStoredUserArea() == UserArea.ADMINISTRATION) {
+                    isAdministrator.value = true
+                } else {
+                    signOut()
+                }
+            }
+            if (isAdministrator.value) {
+                AdministrationScreen(
+                    repository = application.container.managedAccountsRepository,
+                    onSignOut = signOut
+                )
+            }
+        }
+        composable(Route.Teaching) {
+            TeacherWorkspaceScreen(
+                repository = application.container.teachingRepository,
+                onSignOut = signOut
+            )
+        }
+        composable(Route.DiagnosticSummary) {
+            val report = completedDiagnosticReport.value
+            if (report == null) {
+                NavigationPlaceholderScreen(
+                    title = "Diagnóstico guardado",
+                    description = "El resultado quedó guardado en este dispositivo.",
+                    primaryLabel = "Volver al inicio",
+                    onPrimary = { navController.goTo(Route.Home) }
+                )
+            } else DiagnosticSummaryScreen(report) { navController.goTo(Route.Home) }
+        }
         composable(Route.Practice) {
-            PracticeScreen(
-                onCorrect = { navController.goTo(Route.SessionSummary) },
-                onNeedsReview = { navController.goTo(Route.PracticeFeedback) },
+            val studentId = authRepository.activeStudentIdOrNull()
+            val diagnosticMode = remember(studentId) { mutableStateOf<Boolean?>(null) }
+            val schoolLevel = remember(studentId) { mutableStateOf("BASICO_1") }
+            LaunchedEffect(studentId) {
+                if (studentId != null) {
+                    val alreadyDiagnosed = runCatching {
+                        application.container.learningSessionRepository.hasCompletedDiagnostic(studentId)
+                    }.getOrDefault(false)
+                    diagnosticMode.value = !alreadyDiagnosed
+                    if (!alreadyDiagnosed) {
+                        schoolLevel.value = when (val result = application.container.studentProfilesRepository.listMine()) {
+                            is StudentProfilesResult.Success -> result.profiles.firstOrNull { it.id == studentId }?.educationLevel ?: "BASICO_1"
+                            else -> "BASICO_1"
+                        }
+                    }
+                }
+            }
+            if (studentId == null) {
+                NavigationPlaceholderScreen(
+                    title = "Selecciona un perfil",
+                    description = "El progreso se guarda por estudiante. Entra al acceso adulto y elige un perfil antes de comenzar.",
+                    primaryLabel = "Elegir perfil",
+                    onPrimary = { navController.goTo(Route.AdultHome) },
+                    onBack = navController::navigateUp
+                )
+            } else if (diagnosticMode.value == null) {
+                NavigationPlaceholderScreen(title = "Preparando tu sesión", description = "Estamos preparando tus ejercicios…")
+            } else PracticeScreen(
+                onComplete = { outcomes ->
+                    completedSessionResults.value = outcomes
+                    navController.goTo(Route.SessionSummary)
+                },
                 onActiveBreak = { navController.goTo(Route.ActiveBreak) },
-                onExit = { navController.goTo(Route.Home) }
+                onExit = { navController.goTo(Route.Home) },
+                diagnosticMode = diagnosticMode.value == true,
+                schoolLevel = schoolLevel.value,
+                onDiagnosticComplete = { _, report ->
+                    completedDiagnosticReport.value = report
+                    navController.goTo(Route.DiagnosticSummary)
+                }
             )
         }
         composable(Route.PracticeFeedback) {
             FeedbackScreen(
-                onRetry = { navController.goTo(Route.Practice) },
+                onRetry = { navController.popBackStack() },
                 onExit = { navController.goTo(Route.Home) }
             )
         }
         composable(Route.ActiveBreak) {
-            ActiveBreakScreen(onContinue = { navController.goTo(Route.Practice) })
+            ActiveBreakScreen(onContinue = { navController.popBackStack() })
         }
         composable(Route.SessionSummary) {
-            NavigationPlaceholderScreen(
-                title = "¡Muy bien, Tomás!",
-                description = "La sesión terminó. Aquí verás un resumen de tu avance.",
-                primaryLabel = "Volver al inicio",
-                onPrimary = { navController.goTo(Route.Home) }
-            )
+            SessionSummaryScreen(completedSessionResults.value) { navController.goTo(Route.Home) }
         }
         composable(Route.Progress) {
-            NavigationPlaceholderScreen(
-                title = "Mi progreso",
-                description = "Aquí se mostrarán los avances del estudiante.",
+            val studentId = authRepository.activeStudentIdOrNull()
+            if (studentId == null) {
+                NavigationPlaceholderScreen(
+                    title = "Selecciona un perfil",
+                    description = "Primero elige el perfil del estudiante para consultar su avance.",
+                    primaryLabel = "Elegir perfil",
+                    onPrimary = { navController.goTo(Route.AdultHome) },
+                    onBack = navController::navigateUp
+                )
+            } else StudentProgressScreen(
+                getStudentProgress = application.container.getStudentProgress,
+                studentId = studentId,
                 onBack = navController::navigateUp
             )
         }
@@ -144,22 +229,25 @@ fun KMatNavigation() {
             )
         }
         composable(Route.AdultHome) {
-            NavigationPlaceholderScreen(
-                title = "Área adulta",
-                description = "Gestiona la información del estudiante.",
-                primaryLabel = "Gestionar perfiles",
-                onPrimary = { navController.goTo(Route.AdultProfiles) },
-                secondaryLabel = "Ver progreso detallado",
-                onSecondary = { navController.goTo(Route.AdultProgress) },
-                tertiaryLabel = "Ajustes de aprendizaje",
-                onTertiary = { navController.goTo(Route.AdultLearningSettings) },
-                onBack = { navController.goTo(Route.Home) }
+            StudentProfilesScreen(
+                repository = application.container.studentProfilesRepository,
+                onSelect = { profile ->
+                    authRepository.saveActiveStudentId(profile.id)
+                    authRepository.saveDisplayName(profile.name)
+                    navController.goTo(Route.Home)
+                },
+                onBack = signOut,
+                backLabel = "Cerrar cuenta"
             )
         }
         composable(Route.AdultProfiles) {
-            NavigationPlaceholderScreen(
-                title = "Gestión de perfiles",
-                description = "Aquí se podrán administrar los perfiles de estudiantes.",
+            StudentProfilesScreen(
+                repository = application.container.studentProfilesRepository,
+                onSelect = { profile ->
+                    authRepository.saveActiveStudentId(profile.id)
+                    authRepository.saveDisplayName(profile.name)
+                    navController.goTo(Route.Home)
+                },
                 onBack = navController::navigateUp
             )
         }
@@ -185,15 +273,17 @@ private fun NavHostController.goTo(route: String) {
 }
 
 private fun NavHostController.goToAuthenticatedDestination(area: UserArea) {
-    val route = when (area) {
-        UserArea.ADMINISTRATION -> Route.Administration
-        UserArea.TEACHING -> Route.Teaching
-        UserArea.LEARNING -> Route.Home
-    }
+    val route = area.authenticatedRoute()
     navigate(route) {
         popUpTo(Route.Login) { inclusive = true }
         launchSingleTop = true
     }
+}
+
+private fun UserArea.authenticatedRoute(): String = when (this) {
+    UserArea.ADMINISTRATION -> Route.Administration
+    UserArea.TEACHING -> Route.Teaching
+    UserArea.LEARNING -> Route.AdultHome
 }
 
 private fun NavHostController.goToLogin() {

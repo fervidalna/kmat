@@ -58,7 +58,7 @@ Card 60 160 240 112 $blue 'USUARIO' @('PK  id_usuario','FK  auth_user_id','rol �
 Card 345 160 270 100 $blue 'GRUPO' @('PK  id_grupo','FK  id_docente','nombre · código · estado')
 Card 665 160 225 90 $teal 'INSCRIPCION_GRUPO' @('PK  id_inscripción','FK grupo · estudiante')
 Card 955 160 155 74 $violet 'NIVEL' @('PK id_nivel')
-Card 1170 160 250 74 $violet 'CONTENIDO' @('PK id_contenido · NT1/NT2')
+Card 1170 160 250 74 $violet 'CONTENIDO' @('PK id_contenido · 1°/2° Básico')
 Card 1470 160 245 90 $purple 'AUDITORIA' @('PK id_auditoría','FK usuario · entidad · acción')
 Card 345 316 270 126 $teal 'ESTUDIANTE' @('PK  id_estudiante','FK responsable · nivel_actual','nombre · avatar · nivel_educativo','estado · fechas')
 Card 760 316 260 126 $orange 'EJERCICIO' @('PK  id_ejercicio','FK contenido · nivel','versión · tipo · dificultad','respuesta · configuración')

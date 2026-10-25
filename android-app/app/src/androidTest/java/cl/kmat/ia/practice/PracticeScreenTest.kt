@@ -36,14 +36,16 @@ class PracticeScreenTest {
 
     @Test
     fun writesTwoClearsAndChecksWithoutScrolling() {
-        val correct = AtomicBoolean(false)
-        val needsReview = AtomicBoolean(false)
+        val completed = AtomicBoolean(false)
+        val hasIncorrectOutcome = AtomicBoolean(false)
         compose.runOnUiThread {
             compose.activity.setContent {
                 KMatTheme {
                     PracticeScreen(
-                        onCorrect = { correct.set(true) },
-                        onNeedsReview = { needsReview.set(true) },
+                        onComplete = { outcomes ->
+                            hasIncorrectOutcome.set(outcomes.any { !it.isCorrect })
+                            completed.set(true)
+                        },
                         onActiveBreak = {},
                         onExit = {}
                     )
@@ -71,8 +73,8 @@ class PracticeScreenTest {
         waitForTwo()
         assertControlsVisible()
         compose.onNodeWithTag("check-answer").assertIsEnabled().performClick()
-        compose.waitUntil(15_000) { correct.get() || needsReview.get() }
-        assertFalse("The handwritten 2 must solve 1 + 1", needsReview.get())
+        compose.waitUntil(15_000) { completed.get() }
+        assertFalse("The handwritten 2 must solve 1 + 1", hasIncorrectOutcome.get())
     }
 
     private fun assertControlsVisible() {

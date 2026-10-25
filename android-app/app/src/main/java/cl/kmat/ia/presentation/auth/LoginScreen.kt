@@ -17,12 +17,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +60,12 @@ fun LoginScreen(onAuthenticated: (UserArea) -> Unit, onRegister: () -> Unit) {
         }
     )
     val state = loginViewModel.uiState
+    var demoAccountsExpanded by remember { mutableStateOf(false) }
+    val demoAccounts = listOf(
+        "Administrador" to ("administrador@kmat.local" to "administrador"),
+        "Padre Tomás" to ("padre.tomas@kmat.local" to "padre.tomas"),
+        "Docente 2° Básico A" to ("docente.nt2a@kmat.local" to "docente.nt2a")
+    )
 
     BoxWithConstraints {
         val showMascot = maxWidth >= 920.dp && maxHeight >= 500.dp
@@ -126,6 +137,32 @@ fun LoginScreen(onAuthenticated: (UserArea) -> Unit, onRegister: () -> Unit) {
                         imeAction = ImeAction.Done
                     )
                 )
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    TextButton(
+                        onClick = { demoAccountsExpanded = true },
+                        enabled = !state.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Acceso rápido de prueba", color = KMatInk, fontWeight = FontWeight.Bold)
+                    }
+                    DropdownMenu(
+                        expanded = demoAccountsExpanded,
+                        onDismissRequest = { demoAccountsExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.88f)
+                    ) {
+                        demoAccounts.forEach { (label, credentials) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    loginViewModel.updateEmail(credentials.first)
+                                    loginViewModel.updatePassword(credentials.second)
+                                    demoAccountsExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 state.errorMessage?.let {
                     Text(

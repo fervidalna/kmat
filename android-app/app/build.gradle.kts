@@ -8,10 +8,23 @@ plugins {
 android {
     namespace = "cl.kmat.ia"
     compileSdk = 35
-    val supabaseUrl = providers.gradleProperty("SUPABASE_URL").orElse("").get()
-    val supabaseAnonKey = providers.gradleProperty("SUPABASE_ANON_KEY").orElse("").get()
-    val supabaseStudentId = providers.gradleProperty("SUPABASE_STUDENT_ID").orElse("").get()
-    val supabaseExerciseVersionId = providers.gradleProperty("SUPABASE_EXERCISE_VERSION_ID").orElse("").get()
+    val signingStoreFile = providers.gradleProperty("K_MAT_SIGNING_STORE_FILE")
+        .orElse(providers.environmentVariable("K_MAT_SIGNING_STORE_FILE")).orNull
+    val signingStorePassword = providers.gradleProperty("K_MAT_SIGNING_STORE_PASSWORD")
+        .orElse(providers.environmentVariable("K_MAT_SIGNING_STORE_PASSWORD")).orNull
+    val signingKeyAlias = providers.gradleProperty("K_MAT_SIGNING_KEY_ALIAS")
+        .orElse(providers.environmentVariable("K_MAT_SIGNING_KEY_ALIAS")).orNull
+    val signingKeyPassword = providers.gradleProperty("K_MAT_SIGNING_KEY_PASSWORD")
+        .orElse(providers.environmentVariable("K_MAT_SIGNING_KEY_PASSWORD")).orNull
+    // Gradle properties take precedence for local development; CI can inject env vars.
+    val supabaseUrl = providers.gradleProperty("SUPABASE_URL")
+        .orElse(providers.environmentVariable("SUPABASE_URL")).orElse("").get()
+    val supabaseAnonKey = providers.gradleProperty("SUPABASE_ANON_KEY")
+        .orElse(providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY"))
+        .orElse(providers.environmentVariable("SUPABASE_ANON_KEY"))
+        .orElse(providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY")).orElse("").get()
+    val supabaseExerciseVersionId = providers.gradleProperty("SUPABASE_EXERCISE_VERSION_ID")
+        .orElse(providers.environmentVariable("SUPABASE_EXERCISE_VERSION_ID")).orElse("").get()
 
     defaultConfig {
         applicationId = "cl.kmat.ia"
@@ -21,7 +34,6 @@ android {
         versionName = "0.1.0"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
-        buildConfigField("String", "SUPABASE_STUDENT_ID", "\"$supabaseStudentId\"")
         buildConfigField("String", "SUPABASE_EXERCISE_VERSION_ID", "\"$supabaseExerciseVersionId\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -29,6 +41,16 @@ android {
 
     buildTypes {
         release {
+            if (signingStoreFile != null && signingStorePassword != null &&
+                signingKeyAlias != null && signingKeyPassword != null
+            ) {
+                signingConfig = signingConfigs.create("release") {
+                    storeFile = file(signingStoreFile)
+                    storePassword = signingStorePassword
+                    keyAlias = signingKeyAlias
+                    keyPassword = signingKeyPassword
+                }
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -53,6 +75,14 @@ android {
 
 }
 
+// Give both locally built and release APKs a recognizable, versioned name.
+android.applicationVariants.all {
+    outputs.all {
+        val apkOutput = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+        apkOutput.outputFileName = "k-mat-1.0.apk"
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -61,6 +91,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
+    implementation("androidx.compose.animation:animation")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)

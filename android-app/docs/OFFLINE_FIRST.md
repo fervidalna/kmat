@@ -19,7 +19,8 @@ internet para ser aceptado o conservado.
 `LearningSyncScheduler` programa:
 
 1. Un trabajo inmediato con la restricción `NetworkType.CONNECTED` al guardar
-   sesión o intento.
+   sesión o intento y al cerrar la sesión. Los trabajos nuevos se agregan a la
+   cola si ya hay una sincronización ejecutándose.
 2. Una revisión periódica cada 15 minutos para recuperar eventos que no se
    pudieron enviar antes.
 
@@ -35,12 +36,18 @@ Agrega estas propiedades a `~/.gradle/gradle.properties` o al archivo
 ```properties
 SUPABASE_URL=https://TU_PROYECTO.supabase.co
 SUPABASE_ANON_KEY=tu_clave_anon_publica
-SUPABASE_STUDENT_ID=uuid_del_estudiante_en_supabase
 SUPABASE_EXERCISE_VERSION_ID=uuid_de_la_version_publicada_del_ejercicio
 ```
 
 El trabajador envía los lotes a
-`/functions/v1/sync-learning-data`. La función se encuentra en
+`/functions/v1/sync-learning-data`. El backend valida los estudiantes vinculados
+en `responsable_estudiante`; no se configura un ID de estudiante dentro del APK.
+Al abrir el progreso con internet, la app primero intenta enviar la cola
+pendiente y luego descarga los intentos de esos estudiantes. Así, la misma
+cuenta puede ver el avance en distintos dispositivos. Sin conexión, se muestra
+el progreso local. Actualmente la cuenta debe tener exactamente un estudiante
+vinculado; para cuentas con varios perfiles hace falta seleccionar el perfil en
+la app. La función se encuentra en
 `supabase/functions/sync-learning-data/index.ts` y se despliega con:
 
 ```powershell

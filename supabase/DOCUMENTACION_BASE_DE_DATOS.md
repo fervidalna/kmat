@@ -5,7 +5,7 @@ La fuente ejecutable es [la migracion inicial](migrations/20260930160000_kmat_sc
 ## Principios de diseno
 
 - Los identificadores son UUID para que Room pueda crear registros offline sin colisiones.
-- Las tablas de catalogo, historial y relaciones N:M estan separadas. No se repiten responsables en `estudiante`, docentes en `grupo` ni contenidos entre NT1 y NT2.
+- Las tablas de catálogo, historial y relaciones N:M están separadas. No se repiten responsables en `estudiante`, docentes en `grupo` ni contenidos entre 1° y 2° Básico.
 - Los intentos son el historial fuente. El progreso se calcula mediante `v_progreso_contenido`, por lo que no duplica aciertos, errores ni tiempos.
 - Una asignacion usa una version inmutable de ejercicio. El historial no cambia al editar el banco de ejercicios.
 - Las claves foraneas compuestas conectan sesion, refuerzo, intento, deteccion e intervencion con el mismo estudiante y asignacion.
@@ -29,7 +29,7 @@ ESTUDIANTE -> SESION_APRENDIZAJE -> ASIGNACION_EJERCICIO
 |---|---|---|
 | `perfil` | `id_usuario` = `auth.users.id` | Perfil mínimo del adulto autenticado. |
 | `rol` / `usuario_rol` | `codigo` / clave compuesta | Roles escalables; un usuario puede ser docente y responsable. |
-| `nivel_educativo` | `codigo` | Catálogo NT1 y NT2. |
+| `nivel_educativo` | `codigo` | Catálogo de niveles educativos (incluye 1° y 2° Básico para los perfiles nuevos). |
 | `nivel_aprendizaje` | `id_nivel` | Secuencia pedagógica usada por diagnóstico y adaptación. |
 | `estudiante` | `id_estudiante` | Perfil infantil, sin cuenta ni contraseña propia. |
 | `responsable_estudiante` | `(id_estudiante, id_responsable)` | Relación N:M entre estudiante y responsables; uno puede ser principal. |
@@ -38,7 +38,7 @@ ESTUDIANTE -> SESION_APRENDIZAJE -> ASIGNACION_EJERCICIO
 | `inscripcion_grupo` | `id_inscripcion` | Matrícula histórica estudiante-grupo. |
 | `consentimiento` | `id_consentimiento` | Consentimiento versionado, ligado a un responsable válido del estudiante. |
 | `contenido` | `id_contenido` | Contenido matemático reutilizable. |
-| `contenido_nivel_educativo` | clave compuesta | Relación N:M entre contenido y NT1/NT2. |
+| `contenido_nivel_educativo` | clave compuesta | Relación N:M entre contenido y niveles de Básica. |
 | `ejercicio` | `id_ejercicio` | Identidad estable de un ejercicio. |
 | `ejercicio_version` | `id_ejercicio_version` | Enunciado, solución y configuración inmutables de cada versión. |
 | `recurso_apoyo` | `id_recurso` | Pausas, pistas, juegos, videos y materiales. |
@@ -90,7 +90,7 @@ El DDL no puede configurar las copias de seguridad de una cuenta Supabase. Antes
 3. Programar una exportación externa cifrada de datos necesarios para continuidad, con acceso limitado al equipo autorizado.
 4. Documentar responsable, frecuencia, retención, ubicación y resultado de cada prueba de restauración.
 
-La migración evita pérdidas accidentales usando `ON DELETE RESTRICT` en el historial pedagógico. Las bajas funcionales se realizan con estados `INACTIVO`, `CANCELADO` o `RETIRADA`, no borrando historial.
+La migración evita pérdidas accidentales usando `ON DELETE RESTRICT` en el historial pedagógico. Las bajas funcionales habituales usan estados `INACTIVO`, `CANCELADO` o `RETIRADA`. La eliminación solicitada de un perfil de estudiante es una excepción: `eliminar_mi_estudiante` borra definitivamente el perfil y sus datos vinculados en una transacción, tras verificar que no siga compartido con otro responsable.
 
 ## Despliegue
 

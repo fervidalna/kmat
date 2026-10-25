@@ -78,6 +78,10 @@ Las migraciones están en [supabase/migrations](supabase/migrations). Se aplican
 1. `20260930160000_kmat_schema.sql`
 2. `20261001235500_area_usuario_autenticado.sql`
 3. `20261002001000_registro_responsable.sql`
+4. `20261018000000_nombre_usuario_autenticado.sql`
+5. `20261018001000_saludo_estudiante_vinculado.sql`
+6. `20261020001000_gestion_perfiles_responsable.sql`
+7. `20261020002000_niveles_basica.sql`
 
 El archivo [poblacion_inicial_mvp.sql](supabase/poblacion_inicial_mvp.sql) agrega roles, catálogos y datos de demostración. Antes de ejecutarlo se deben crear en Supabase Authentication los usuarios de ejemplo que el mismo archivo indica.
 

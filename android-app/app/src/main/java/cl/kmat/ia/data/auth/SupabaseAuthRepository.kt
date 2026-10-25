@@ -22,6 +22,8 @@ class SupabaseAuthRepository(
     override suspend fun signIn(email: String, password: String): SignInResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext SignInResult.NotConfigured
 
+        // Cada dispositivo mantiene su perfil activo local; renovar la sesión no lo cambia.
+
         runCatching {
             val response = post("/auth/v1/token?grant_type=password", JSONObject()
                 .put("email", email)
@@ -29,7 +31,11 @@ class SupabaseAuthRepository(
             when (response.code) {
                 in 200..299 -> parseSession(response.body)?.let { session ->
                     sessionStore.save(session)
+                    sessionStore.clearActiveStudentId()
                     resolveUserArea(session)?.let { area ->
+                        sessionStore.saveUserArea(area)
+                        resolveDisplayName(session)?.let(sessionStore::saveDisplayName)
+                            ?: sessionStore.clearDisplayName()
                         SignInResult.Success(area = area)
                     } ?: run {
                         // Sin un rol confirmado no se concede acceso a ninguna vista.
@@ -70,7 +76,12 @@ class SupabaseAuthRepository(
             when (response.code) {
                 in 200..299 -> parseSession(response.body)?.let { session ->
                     sessionStore.save(session)
-                    resolveUserArea(session)?.let { SignUpResult.Authenticated(it) }
+                    sessionStore.clearActiveStudentId()
+                    resolveUserArea(session)?.let {
+                        sessionStore.saveUserArea(it)
+                        sessionStore.saveDisplayName(resolveDisplayName(session) ?: displayName)
+                        SignUpResult.Authenticated(it)
+                    }
                         ?: run {
                             sessionStore.clear()
                             SignUpResult.NetworkError
@@ -91,6 +102,33 @@ class SupabaseAuthRepository(
     }
 
     override fun hasStoredSession(): Boolean = sessionStore.hasSession()
+
+    override fun storedUserAreaOrNull() = sessionStore.loadUserArea()
+
+    override suspend fun validateStoredUserArea(): UserArea? = withContext(Dispatchers.IO) {
+        val accessToken = validAccessTokenOrNull() ?: return@withContext null
+        val session = sessionStore.load() ?: return@withContext null
+        val area = resolveUserArea(session.copy(accessToken = accessToken))
+        if (area == null) {
+            sessionStore.clear()
+        } else {
+            sessionStore.saveUserArea(area)
+        }
+        area
+    }
+
+    override fun storedDisplayNameOrNull() = sessionStore.loadDisplayName()
+
+    override fun saveDisplayName(displayName: String) = sessionStore.saveDisplayName(displayName)
+
+    override fun saveActiveStudentId(studentId: String) = sessionStore.saveActiveStudentId(studentId)
+
+    override fun activeStudentIdOrNull() = sessionStore.loadActiveStudentId()
+
+    override fun clearActiveStudentId() {
+        sessionStore.clearActiveStudentId()
+        sessionStore.clearDisplayName()
+    }
 
     override suspend fun signOut() = withContext(Dispatchers.IO) {
         val accessToken = sessionStore.load()?.accessToken
@@ -126,6 +164,12 @@ class SupabaseAuthRepository(
             "RESPONSABLE" -> UserArea.LEARNING
             else -> null
         }
+    }.getOrNull()
+
+    private fun resolveDisplayName(session: AuthSession): String? = runCatching {
+        val response = post("/rest/v1/rpc/mi_nombre_usuario", JSONObject(), session.accessToken)
+        if (response.code !in 200..299) return@runCatching null
+        (JSONTokener(response.body).nextValue() as? String)?.trim()?.takeIf { it.isNotEmpty() }
     }.getOrNull()
 
     private fun post(path: String, body: JSONObject, bearerToken: String? = null): HttpResponse {
