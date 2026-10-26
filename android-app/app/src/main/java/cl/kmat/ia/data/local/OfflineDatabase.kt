@@ -209,8 +209,23 @@ interface OfflineLearningDao {
     @Query("delete from learning_session where studentId = :studentId")
     suspend fun deleteSessionsForStudent(studentId: String)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun saveDiagnosticResult(result: StudentDiagnosticResultEntity)
+
+    @Query("select * from learning_session where studentId = :studentId and sessionType = 'DIAGNOSTICO' and status = 'COMPLETED' order by endedAt desc limit 1")
+    suspend fun getCompletedDiagnosticSession(studentId: String): LearningSessionEntity?
+
+    @Query("""
+        select a.exerciseId, a.isCorrect, a.elapsedMillis,
+               e.axis, e.expectedTimeMillis, e.difficulty
+        from exercise_attempt a join local_exercise e on e.id = a.exerciseId
+        where a.sessionId = :sessionId and a.attemptNumber = (
+            select min(first.attemptNumber) from exercise_attempt first
+            where first.sessionId = a.sessionId and first.exerciseId = a.exerciseId
+        )
+        order by a.createdAt asc
+    """)
+    suspend fun getDiagnosticPerformances(sessionId: String): List<RecentPracticePerformanceRow>
 
     @Query("select * from student_diagnostic_result where studentId = :studentId limit 1")
     suspend fun getDiagnosticResult(studentId: String): StudentDiagnosticResultEntity?

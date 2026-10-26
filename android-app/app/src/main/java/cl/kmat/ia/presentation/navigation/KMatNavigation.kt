@@ -30,6 +30,7 @@ import cl.kmat.ia.presentation.progress.StudentProgressScreen
 import cl.kmat.ia.domain.model.UserArea
 import cl.kmat.ia.presentation.student.StudentProfilesScreen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 object Route {
     const val Login = "login"
@@ -144,22 +145,31 @@ fun KMatNavigation() {
             val studentId = authRepository.activeStudentIdOrNull()
             val diagnosticMode = remember(studentId) { mutableStateOf<Boolean?>(null) }
             val schoolLevel = remember(studentId) { mutableStateOf("BASICO_1") }
-            LaunchedEffect(studentId, hasAuthenticatedSession) {
+            val preparationError = remember(studentId) { mutableStateOf(false) }
+            val preparationAttempt = remember(studentId) { mutableStateOf(0) }
+            LaunchedEffect(studentId, hasAuthenticatedSession, preparationAttempt.value) {
                 if (!hasAuthenticatedSession) {
                     diagnosticMode.value = null
                     navController.goToLogin()
                     return@LaunchedEffect
                 }
                 if (studentId != null) {
-                    val alreadyDiagnosed = runCatching {
-                        application.container.learningSessionRepository.hasCompletedDiagnostic(studentId)
-                    }.getOrDefault(false)
-                    diagnosticMode.value = !alreadyDiagnosed
-                    if (!alreadyDiagnosed) {
-                        schoolLevel.value = when (val result = application.container.studentProfilesRepository.listMine()) {
-                            is StudentProfilesResult.Success -> result.profiles.firstOrNull { it.id == studentId }?.educationLevel ?: "BASICO_1"
-                            else -> "BASICO_1"
+                    preparationError.value = false
+                    diagnosticMode.value = null
+                    try {
+                        val alreadyDiagnosed = application.container.learningSessionRepository.hasCompletedDiagnostic(studentId)
+                        if (!alreadyDiagnosed) {
+                            schoolLevel.value = when (val result = application.container.studentProfilesRepository.listMine()) {
+                                is StudentProfilesResult.Success -> result.profiles.firstOrNull { it.id == studentId }?.educationLevel ?: "BASICO_1"
+                                else -> "BASICO_1"
+                            }
                         }
+                        diagnosticMode.value = !alreadyDiagnosed
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        android.util.Log.e("KMatPractice", "No se pudo consultar el diagnóstico guardado", error)
+                        preparationError.value = true
                     }
                 }
             }
@@ -176,12 +186,20 @@ fun KMatNavigation() {
                     onPrimary = { navController.goTo(Route.AdultHome) },
                     onBack = navController::navigateUp
                 )
+            } else if (preparationError.value) {
+                NavigationPlaceholderScreen(
+                    title = "No pudimos consultar tu progreso",
+                    description = "Reintenta para continuar con tus ejercicios.",
+                    primaryLabel = "Reintentar",
+                    onPrimary = { preparationAttempt.value++ },
+                    onBack = navController::navigateUp
+                )
             } else if (diagnosticMode.value == null) {
                 NavigationPlaceholderScreen(title = "Preparando tu sesión", description = "Estamos preparando tus ejercicios…")
             } else PracticeScreen(
                 onComplete = { outcomes ->
                     completedSessionResults.value = outcomes
-                    navController.goTo(Route.SessionSummary)
+                    navController.goToSessionResult(Route.SessionSummary)
                 },
                 onActiveBreak = { navController.goTo(Route.ActiveBreak) },
                 onExit = { navController.goTo(Route.Home) },
@@ -189,7 +207,7 @@ fun KMatNavigation() {
                 schoolLevel = schoolLevel.value,
                 onDiagnosticComplete = { _, report ->
                     completedDiagnosticReport.value = report
-                    navController.goTo(Route.DiagnosticSummary)
+                    navController.goToSessionResult(Route.DiagnosticSummary)
                 }
             )
         }
@@ -283,7 +301,17 @@ fun KMatNavigation() {
 }
 
 private fun NavHostController.goTo(route: String) {
-    navigate(route) { launchSingleTop = true }
+    navigate(route) {
+        if (route == Route.Home) popUpTo(Route.Home) { inclusive = false }
+        launchSingleTop = true
+    }
+}
+
+private fun NavHostController.goToSessionResult(route: String) {
+    navigate(route) {
+        popUpTo(Route.Practice) { inclusive = true }
+        launchSingleTop = true
+    }
 }
 
 private fun NavHostController.goToAuthenticatedDestination(area: UserArea) {

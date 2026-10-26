@@ -17,6 +17,8 @@ import cl.kmat.ia.domain.model.ExercisePerformance
 import cl.kmat.ia.domain.model.HandwritingStroke
 import cl.kmat.ia.domain.model.StudentSubjectProgress
 import cl.kmat.ia.domain.model.DiagnosticReport
+import cl.kmat.ia.domain.model.DiagnosticAnswer
+import cl.kmat.ia.domain.usecase.DiagnosticAssessmentEngine
 import cl.kmat.ia.domain.model.DiagnosticAxisResult
 import cl.kmat.ia.domain.model.SubjectProgressPoint
 import cl.kmat.ia.domain.repository.LearningSessionRepository
@@ -217,7 +219,32 @@ class RoomLearningSessionRepository(
         ))
     }
 
-    override suspend fun hasCompletedDiagnostic(studentId: String): Boolean = dao.getDiagnosticResult(studentId) != null
+    override suspend fun hasCompletedDiagnostic(studentId: String): Boolean = database.withTransaction {
+        if (dao.getDiagnosticResult(studentId) != null) return@withTransaction true
+        // Older builds could mark the session completed before persisting its report.
+        // Recover only a completed diagnostic with sufficient evidence, never an abandoned test.
+        val session = dao.getCompletedDiagnosticSession(studentId) ?: return@withTransaction false
+        val answers = dao.getDiagnosticPerformances(session.id).map {
+            DiagnosticAnswer(it.exerciseId, it.axis, it.difficulty, it.isCorrect, it.elapsedMillis, it.expectedTimeMillis)
+        }
+        if (answers.size < DiagnosticAssessmentEngine.INITIAL_QUESTIONS ||
+            !DiagnosticAssessmentEngine.AXES.all { axis -> answers.count { it.axis == axis } >= 2 }
+        ) return@withTransaction false
+        saveDiagnosticReport(studentId, DiagnosticAssessmentEngine().buildReport(answers).copy(
+            completedAt = session.endedAt ?: session.startedAt
+        ))
+        true
+    }
+
+    override suspend fun completeDiagnosticSession(sessionId: String, studentId: String, report: DiagnosticReport) {
+        database.withTransaction {
+            val session = requireNotNull(dao.getSession(sessionId))
+            require(session.studentId == studentId && session.sessionType == "DIAGNOSTICO")
+            saveDiagnosticReport(studentId, report)
+            completeSessionLocally(sessionId, System.currentTimeMillis())
+        }
+        LearningSyncScheduler.enqueueWhenConnected(applicationContext)
+    }
 
     private fun StudentDiagnosticResultEntity.toDiagnosticReport(): DiagnosticReport {
         val rows = org.json.JSONArray(axisResultsJson)
@@ -237,22 +264,27 @@ class RoomLearningSessionRepository(
     override suspend fun completeSession(sessionId: String) {
         val endedAt = System.currentTimeMillis()
         database.withTransaction {
-            dao.completeSession(sessionId, endedAt)
-            val session = requireNotNull(dao.getSession(sessionId)) { "La sesión local no existe" }
-            dao.enqueueSync(
-                PendingSyncEntity(
-                    id = UUID.randomUUID().toString(),
-                    operation = "SESSION_COMPLETED",
-                    payload = JSONObject()
-                        .put("local_session_id", session.id)
-                        .put("student_local_id", session.studentId)
-                        .put("ended_at", endedAt)
-                        .toString(),
-                    createdAt = endedAt
-                )
-            )
+            completeSessionLocally(sessionId, endedAt)
         }
         LearningSyncScheduler.enqueueWhenConnected(applicationContext)
+    }
+
+    private suspend fun completeSessionLocally(sessionId: String, endedAt: Long) {
+        val session = requireNotNull(dao.getSession(sessionId)) { "La sesión local no existe" }
+        if (session.status == "COMPLETED") return
+        dao.completeSession(sessionId, endedAt)
+        dao.enqueueSync(
+            PendingSyncEntity(
+                id = UUID.randomUUID().toString(),
+                operation = "SESSION_COMPLETED",
+                payload = JSONObject()
+                    .put("local_session_id", session.id)
+                    .put("student_local_id", session.studentId)
+                    .put("ended_at", endedAt)
+                    .toString(),
+                createdAt = endedAt
+            )
+        )
     }
 
     override suspend fun getPracticeProgress(studentId: String): List<StudentSubjectProgress> {

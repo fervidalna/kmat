@@ -23,7 +23,9 @@ import kotlinx.coroutines.launch
 
 data class PracticeUiState(
     val isLoading: Boolean = true,
+    val isDiagnosticSession: Boolean = false,
     val isSaving: Boolean = false,
+    val answerSaved: Boolean = false,
     val loadError: String? = null,
     val sessionId: String? = null,
     val exercises: List<Exercise> = emptyList(),
@@ -67,7 +69,7 @@ class PracticeViewModel(
     private val savePracticeAttempt: SavePracticeAttemptUseCase,
     private val studentId: String?,
     private val handwritingRecognitionRepository: HandwritingRecognitionRepository,
-    private val diagnosticMode: Boolean = false,
+    private var diagnosticMode: Boolean = false,
     private val schoolLevel: String = "BASICO_1",
     private val diagnosticEngine: DiagnosticAssessmentEngine = DiagnosticAssessmentEngine()
 ) : ViewModel() {
@@ -77,6 +79,9 @@ class PracticeViewModel(
     private var strokeRevision = 0
     private var writingWidth = 0f
     private var writingHeight = 0f
+    private var diagnosticBank: List<Exercise> = emptyList()
+    private var pendingOutcome: ExerciseOutcome? = null
+    private var completedResult: PracticeAnswerResult.SessionComplete? = null
 
     init {
         loadOfflineSession()
@@ -95,7 +100,7 @@ class PracticeViewModel(
 
     fun selectCountAnswer(index: Int) {
         val state = _uiState.value
-        if (index !in state.countAnswerParts.indices || state.isSaving) return
+        if (index !in state.countAnswerParts.indices || state.isSaving || state.answerSaved) return
         if (state.activeCountAnswerIndex == index) return
 
         val answers = state.countAnswerParts.toMutableList()
@@ -154,7 +159,7 @@ class PracticeViewModel(
             clearCountAnswers()
             return
         }
-        if (state.isSaving) return
+        if (state.isSaving || state.answerSaved) return
         recognitionJob?.cancel()
         strokeRevision++
         val parts = state.countAnswerParts.toMutableList()
@@ -173,7 +178,7 @@ class PracticeViewModel(
     }
 
     fun clearCountAnswers() {
-        if (_uiState.value.isSaving) return
+        if (_uiState.value.isSaving || _uiState.value.answerSaved) return
         val count = _uiState.value.countAnswerParts.size
         _uiState.value = _uiState.value.copy(
             countAnswerParts = List(count) { "" },
@@ -184,7 +189,7 @@ class PracticeViewModel(
     }
 
     fun clearAnswerAndStrokes() {
-        if (_uiState.value.isSaving) return
+        if (_uiState.value.isSaving || _uiState.value.answerSaved) return
         recognitionJob?.cancel()
         strokeRevision++
         _uiState.value = _uiState.value.copy(
@@ -193,7 +198,7 @@ class PracticeViewModel(
     }
 
     fun startStroke(x: Float, y: Float) {
-        if (_uiState.value.isSaving) return
+        if (_uiState.value.isSaving || _uiState.value.answerSaved) return
         recognitionJob?.cancel()
         strokeRevision++
         val point = StrokePoint(x, y, System.currentTimeMillis())
@@ -206,7 +211,7 @@ class PracticeViewModel(
     }
 
     fun appendPointToStroke(x: Float, y: Float) {
-        if (_uiState.value.isSaving) return
+        if (_uiState.value.isSaving || _uiState.value.answerSaved) return
         val strokes = _uiState.value.strokes
         val lastStroke = strokes.lastOrNull() ?: return
         val updatedStroke = lastStroke.copy(points = lastStroke.points + StrokePoint(x, y, System.currentTimeMillis()))
@@ -215,7 +220,7 @@ class PracticeViewModel(
 
     fun endStroke() {
         _uiState.value = _uiState.value.copy(isDrawing = false)
-        if (!_uiState.value.isRecognizerReady || _uiState.value.isSaving) return
+        if (!_uiState.value.isRecognizerReady || _uiState.value.isSaving || _uiState.value.answerSaved) return
         val revision = strokeRevision
         recognitionJob?.cancel()
         recognitionJob = viewModelScope.launch {
@@ -298,6 +303,7 @@ class PracticeViewModel(
     }
 
     fun submitAnswer(onSaved: (PracticeAnswerResult) -> Unit) {
+        completedResult?.let { onSaved(it); return }
         val state = _uiState.value
         val exercise = state.exercise ?: return
         val sessionId = state.sessionId ?: return
@@ -321,57 +327,70 @@ class PracticeViewModel(
         }
         recognitionJob?.cancel()
 
-        _uiState.value = state.copy(isSaving = true, isRecognizing = true, recognitionMessage = null)
+        _uiState.value = state.copy(isSaving = true, isRecognizing = false, recognitionMessage = null)
         viewModelScope.launch {
+            var stage = "lectura"
+            val transition: PracticeAnswerResult
             try {
-                val answer = if (isCountExercise) {
-                    state.countAnswerParts.joinToString(",")
-                } else {
-                    handwritingRecognitionRepository.recognize(state.strokes, writingWidth, writingHeight)
-                }
-                if (answer == null) {
-                    _uiState.value = _uiState.value.copy(
-                        answer = "", isSaving = false, isRecognizing = false,
-                        recognitionMessage = "No pude leer un número. Bórralo y prueba otra vez."
+                val outcome = pendingOutcome ?: run {
+                    val answer = if (isCountExercise) {
+                        state.countAnswerParts.joinToString(",")
+                    } else {
+                        // A new stroke clears answer, so an existing value belongs to these exact strokes.
+                        state.answer.takeIf { it.isNotBlank() } ?: run {
+                            _uiState.value = _uiState.value.copy(isRecognizing = true)
+                            handwritingRecognitionRepository.recognize(state.strokes, writingWidth, writingHeight)
+                        }
+                    }
+                    if (answer == null) {
+                        _uiState.value = _uiState.value.copy(
+                            answer = "", isSaving = false, isRecognizing = false,
+                            recognitionMessage = "No pude leer un número. Bórralo y prueba otra vez."
+                        )
+                        return@launch
+                    }
+                    _uiState.value = _uiState.value.copy(answer = answer, isRecognizing = false)
+                    val elapsedMillis = (System.currentTimeMillis() - state.attemptStartedAt).coerceAtLeast(0)
+                    stage = "guardado"
+                    val result = savePracticeAttempt(
+                        sessionId = sessionId,
+                        exercise = exercise,
+                        answer = answer,
+                        elapsedMillis = elapsedMillis,
+                        strokes = if (isCountExercise) state.countStrokesByPart.flatten() else state.strokes
                     )
-                    return@launch
+                    ExerciseOutcome(
+                        exerciseName = exercise.content,
+                        answer = answer,
+                        expectedAnswer = exercise.expectedAnswer,
+                        isCorrect = result.isCorrect,
+                        elapsedMillis = elapsedMillis,
+                        exerciseId = exercise.id,
+                        axis = exercise.axis,
+                        difficulty = exercise.difficulty,
+                        expectedTimeMillis = exercise.expectedTimeMillis
+                    ).also {
+                        pendingOutcome = it
+                        _uiState.value = _uiState.value.copy(answerSaved = true)
+                    }
                 }
-                _uiState.value = _uiState.value.copy(answer = answer, isRecognizing = false)
-                val elapsedMillis = (System.currentTimeMillis() - state.attemptStartedAt).coerceAtLeast(0)
-                val result = savePracticeAttempt(
-                    sessionId = sessionId,
-                    exercise = exercise,
-                    answer = answer,
-                    elapsedMillis = elapsedMillis,
-                    strokes = if (isCountExercise) state.countStrokesByPart.flatten() else state.strokes
-                )
-                val outcome = ExerciseOutcome(
-                    exerciseName = exercise.content,
-                    answer = answer,
-                    expectedAnswer = exercise.expectedAnswer,
-                    isCorrect = result.isCorrect,
-                    elapsedMillis = elapsedMillis,
-                    exerciseId = exercise.id,
-                    axis = exercise.axis,
-                    difficulty = exercise.difficulty,
-                    expectedTimeMillis = exercise.expectedTimeMillis
-                )
+                stage = "avance"
                 val outcomes = state.completedExercises + outcome
                 val nextIndex = state.exerciseIndex + 1
-                val diagnosticBank = if (diagnosticMode) getDailyOfflineExercise.diagnosticBank(studentId.orEmpty()) else emptyList()
-                val nextDiagnostic = if (diagnosticMode) diagnosticEngine.nextQuestion(
-                    diagnosticBank, schoolLevel, outcomes.map { it.toDiagnosticAnswer() }
-                ) else null
-                val nextExercise = nextDiagnostic ?: state.exercises.getOrNull(nextIndex)
+                // Finish the initial queue, then append each adaptive question before selecting it.
+                val nextExercise = state.exercises.getOrNull(nextIndex) ?: if (diagnosticMode) {
+                    diagnosticEngine.nextQuestion(diagnosticBank, schoolLevel, outcomes.map { it.toDiagnosticAnswer() })
+                } else null
                 if (nextExercise != null) {
                     val nextExercises = if (nextIndex < state.exercises.size) state.exercises else state.exercises + nextExercise
-                    val nextExerciseIndex = if (nextIndex < state.exercises.size) nextIndex else nextExercises.lastIndex
+                    pendingOutcome = null
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
+                        answerSaved = false,
                         isRecognizing = false,
                         exercises = nextExercises,
                         completedExercises = outcomes,
-                        exerciseIndex = nextExerciseIndex,
+                        exerciseIndex = nextIndex,
                         exercise = nextExercise,
                         answer = "",
                         countAnswerParts = emptyCountAnswers(nextExercise),
@@ -381,26 +400,37 @@ class PracticeViewModel(
                         recognitionMessage = null,
                         attemptStartedAt = System.currentTimeMillis()
                     )
-                    onSaved(PracticeAnswerResult.NextExercise)
+                    transition = PracticeAnswerResult.NextExercise
                 } else {
-                    learningSessionRepository.completeSession(sessionId)
+                    stage = "cierre"
                     val diagnosticReport = if (diagnosticMode) {
                         diagnosticEngine.buildReport(outcomes.map { it.toDiagnosticAnswer() }).also {
-                            learningSessionRepository.saveDiagnosticReport(studentId.orEmpty(), it)
+                            learningSessionRepository.completeDiagnosticSession(sessionId, studentId.orEmpty(), it)
                         }
-                    } else null
+                    } else {
+                        learningSessionRepository.completeSession(sessionId)
+                        null
+                    }
                     _uiState.value = _uiState.value.copy(isSaving = false, completedExercises = outcomes)
-                    onSaved(PracticeAnswerResult.SessionComplete(outcomes, diagnosticReport))
+                    transition = PracticeAnswerResult.SessionComplete(outcomes, diagnosticReport)
+                    completedResult = transition
                 }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                Log.e("KMatPractice", "No se pudo completar el ejercicio ${exercise.id}", error)
+                Log.e("KMatPractice", "Fallo en $stage, pregunta ${state.exerciseIndex + 1}, ejercicio ${exercise.id}", error)
                 _uiState.value = _uiState.value.copy(
                     isSaving = false, isRecognizing = false,
-                    recognitionMessage = "No pude comprobar la respuesta. Intenta otra vez."
+                    recognitionMessage = when (stage) {
+                        "lectura" -> "No pude leer el número. Intenta comprobarlo otra vez."
+                        "guardado" -> "No pude guardar la respuesta. Intenta otra vez."
+                        else -> "Tu respuesta está guardada. Pulsa Continuar para seguir."
+                    }
                 )
+                return@launch
             }
+            // Navigation errors are not answer-recognition or persistence errors.
+            onSaved(transition)
         }
     }
 
@@ -414,14 +444,18 @@ class PracticeViewModel(
                 return@launch
             }
             try {
+                // A restored/stale navigation entry must not force a second diagnostic.
+                if (learningSessionRepository.hasCompletedDiagnostic(studentId)) diagnosticMode = false
                 val sessionId = if (diagnosticMode) learningSessionRepository.getDiagnosticSessionId(studentId)
                     else learningSessionRepository.getDailySessionId(studentId)
                 val exercises = if (diagnosticMode) {
-                    diagnosticEngine.initialQuestions(getDailyOfflineExercise.diagnosticBank(studentId), schoolLevel)
+                    diagnosticBank = getDailyOfflineExercise.diagnosticBank(studentId)
+                    diagnosticEngine.initialQuestions(diagnosticBank, schoolLevel)
                 } else getDailyOfflineExercise(studentId)
                 if (exercises.isEmpty()) error("No hay ejercicios disponibles")
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
+                    isDiagnosticSession = diagnosticMode,
                     loadError = null,
                     sessionId = sessionId,
                     exercises = exercises,

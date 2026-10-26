@@ -81,7 +81,7 @@ fun PracticeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     PracticeContent(
         state = state,
-        diagnosticMode = diagnosticMode,
+        diagnosticMode = state.isDiagnosticSession,
         onCountSlotSelect = viewModel::selectCountAnswer,
         onCountSlotDone = viewModel::confirmCountAnswer,
         onStrokeStart = viewModel::startStroke,
@@ -179,7 +179,7 @@ internal fun PracticeContent(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(
                         onClick = onClear,
-                        enabled = !state.isSaving && !state.isDrawing &&
+                        enabled = !state.isSaving && !state.answerSaved && !state.isDrawing &&
                             (!isCountExercise || isEnteringCountAnswer || state.countAnswerParts.any { it.isNotBlank() }),
                         modifier = Modifier.weight(1f).height(56.dp).testTag("clear-answer"),
                         shape = RoundedCornerShape(24.dp),
@@ -205,6 +205,7 @@ internal fun PracticeContent(
                         Text(
                             when {
                                 state.isSaving -> "Comprobando…"
+                                state.answerSaved -> "Continuar"
                                 isEnteringCountAnswer -> "Listo"
                                 else -> "✓ Comprobar"
                             }, fontSize = 18.sp,

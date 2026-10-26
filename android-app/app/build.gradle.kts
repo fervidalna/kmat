@@ -32,7 +32,7 @@ android {
         applicationId = "cl.kmat.ia"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
+        versionCode = 4
         versionName = appVersionName
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")

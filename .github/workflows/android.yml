@@ -48,4 +48,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: k-mat-release-apk
-          path: android-app/app/build/outputs/apk/release/k-mat-1.0.apk
+          path: android-app/app/build/outputs/apk/release/k-mat-*.apk
+          if-no-files-found: error

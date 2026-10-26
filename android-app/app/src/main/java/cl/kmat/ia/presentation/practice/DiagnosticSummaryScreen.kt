@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -24,18 +25,18 @@ import androidx.compose.ui.unit.sp
 import cl.kmat.ia.domain.model.DiagnosticReport
 import cl.kmat.ia.presentation.design.KMatBackground
 import cl.kmat.ia.presentation.design.KMatInk
-import cl.kmat.ia.presentation.design.KMatMascot
 import cl.kmat.ia.presentation.design.KMatPrimaryButton
 
 @Composable
 fun DiagnosticSummaryScreen(report: DiagnosticReport, onHome: () -> Unit) {
+    SessionCompletionAudio()
     val levelLabel = when (report.overallLevel) {
         3 -> "Avanzado"
         2 -> "En desarrollo"
         else -> "Nivel inicial"
     }
     KMatBackground {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
             val phoneLandscape = maxWidth < 840.dp && maxWidth > maxHeight
             if (phoneLandscape) {
                 Row(
@@ -47,13 +48,12 @@ fun DiagnosticSummaryScreen(report: DiagnosticReport, onHome: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("¡Diagnóstico terminado!", color = KMatInk, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+                        SummaryHeading("¡Diagnóstico terminado!", compact = true)
                         Column(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White.copy(alpha = .94f)).padding(12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            KMatMascot(Modifier.fillMaxWidth(.28f))
                             Text("Tu nivel de partida", color = KMatInk, fontSize = 14.sp)
                             Text(levelLabel, color = KMatInk, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
                             Text("Respondidos ${report.totalQuestions} ejercicios. Este resultado ayuda a elegir por dónde comenzar.", color = KMatInk.copy(alpha = .76f), textAlign = TextAlign.Center, fontSize = 12.sp)
@@ -92,13 +92,12 @@ fun DiagnosticSummaryScreen(report: DiagnosticReport, onHome: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("¡Diagnóstico terminado!", color = KMatInk, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
+            SummaryHeading("¡Diagnóstico terminado!")
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Color.White.copy(alpha = .94f)).padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                KMatMascot(Modifier.padding(4.dp).fillMaxWidth(.32f).padding(vertical = 4.dp))
                 Text("Tu nivel de partida", color = KMatInk, fontSize = 17.sp)
                 Text(levelLabel, color = KMatInk, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
                 Text("Respondidos ${report.totalQuestions} ejercicios. Este resultado ayuda a elegir por dónde comenzar.", color = KMatInk.copy(alpha = .76f), textAlign = TextAlign.Center)
