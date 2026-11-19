@@ -8,4 +8,6 @@ class GetStudentProgressUseCase(
 ) {
     suspend operator fun invoke(studentId: String): List<StudentSubjectProgress> =
         repository.getPracticeProgress(studentId)
+
+    suspend fun getDiagnosticReport(studentId: String) = repository.getDiagnosticReport(studentId)
 }

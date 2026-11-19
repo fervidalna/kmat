@@ -63,7 +63,7 @@ class DiagnosticSessionTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val databaseName = "diagnostic-regression-${UUID.randomUUID()}.db"
         var database = Room.databaseBuilder(context, OfflineDatabase::class.java, databaseName).build()
-        val roomRepository = RoomLearningSessionRepository(database, context, downloadRemoteProgress = { null })
+        val roomRepository = RoomLearningSessionRepository(database, context, syncBeforeUse = {})
         var bankReads = 0
         var reportFailed = false
         val repository = object : LearningSessionRepository by roomRepository {
@@ -174,7 +174,7 @@ class DiagnosticSessionTest {
             database.close()
             // Simulate opening the app again with a fresh repository and ViewModel.
             database = Room.databaseBuilder(context, OfflineDatabase::class.java, databaseName).build()
-            val reopenedRepository = RoomLearningSessionRepository(database, context, downloadRemoteProgress = { null })
+            val reopenedRepository = RoomLearningSessionRepository(database, context, syncBeforeUse = {})
             assertTrue(reopenedRepository.hasCompletedDiagnostic(studentId))
             assertFalse(reopenedRepository.hasCompletedDiagnostic("another-student"))
             val nextVm = withContext(Dispatchers.Main) {

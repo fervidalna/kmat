@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.flow.Flow
+import cl.kmat.ia.domain.repository.SessionSyncState
 
 @Entity(tableName = "local_exercise")
 data class LocalExerciseEntity(
@@ -34,7 +36,8 @@ data class LearningSessionEntity(
     val startedAt: Long,
     val endedAt: Long? = null,
     val status: String = "ACTIVE",
-    val sessionType: String = "PRACTICA"
+    val sessionType: String = "PRACTICA",
+    val planJson: String = ""
 )
 
 @Entity(tableName = "student_diagnostic_result")
@@ -44,6 +47,13 @@ data class StudentDiagnosticResultEntity(
     val axisResultsJson: String,
     val questionCount: Int,
     val completedAt: Long
+)
+
+@Entity(tableName = "cached_student_profiles")
+data class CachedStudentProfilesEntity(
+    @PrimaryKey val accountId: String,
+    val profilesJson: String,
+    val updatedAt: Long
 )
 
 @Entity(tableName = "exercise_attempt")
@@ -91,6 +101,7 @@ data class PracticeProgressRow(
     val endedAt: Long?,
     val sessionStatus: String,
     val exerciseId: String,
+    val axis: String,
     val exerciseName: String,
     val answer: String,
     val expectedAnswer: String,
@@ -109,6 +120,53 @@ data class RecentPracticePerformanceRow(
 
 @Dao
 interface OfflineLearningDao {
+    @Query("select * from cached_student_profiles where accountId = :accountId limit 1")
+    suspend fun getCachedStudentProfiles(accountId: String): CachedStudentProfilesEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveCachedStudentProfiles(profiles: CachedStudentProfilesEntity)
+
+    @Query("select status, (select count(distinct exerciseId) from exercise_attempt where sessionId = :sessionId) as answeredCount, exists(select 1 from student_diagnostic_result d where d.studentId = learning_session.studentId) as diagnosticCompleted from learning_session where id = :sessionId")
+    fun observeSessionSyncState(sessionId: String): Flow<SessionSyncState?>
+    @Query("select * from learning_session where studentId = :studentId and sessionType = :sessionType and status = 'ACTIVE' order by startedAt asc, id asc limit 1")
+    suspend fun getResumableSession(studentId: String, sessionType: String): LearningSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun mergeSession(session: LearningSessionEntity)
+
+    @Query("update learning_session set planJson = :planJson where id = :sessionId")
+    suspend fun saveSessionPlan(sessionId: String, planJson: String)
+
+    @Query("select * from exercise_attempt where sessionId = :sessionId order by createdAt, id")
+    suspend fun getSessionAttempts(sessionId: String): List<ExerciseAttemptEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun importAttempt(attempt: ExerciseAttemptEntity)
+
+    @Query("select distinct a.exerciseId from exercise_attempt a join learning_session s on s.id = a.sessionId where s.studentId = :studentId")
+    suspend fun getAnsweredExerciseIds(studentId: String): List<String>
+
+    @Query("""
+        select e.* from exercise_attempt a
+        join learning_session s on s.id = a.sessionId
+        join local_exercise e on e.id = a.exerciseId
+        where s.studentId = :studentId and s.sessionType = 'PRACTICA' and a.isCorrect = 0
+          and not exists (
+            select 1 from exercise_attempt newer
+            join learning_session newerSession on newerSession.id = newer.sessionId
+            where newerSession.studentId = s.studentId and newerSession.sessionType = 'PRACTICA'
+              and newer.exerciseId = a.exerciseId
+              and (newer.createdAt > a.createdAt or (newer.createdAt = a.createdAt and newer.id > a.id))
+          )
+        order by a.createdAt asc, a.id asc
+    """)
+    suspend fun getIncorrectPracticeExercises(studentId: String): List<LocalExerciseEntity>
+
+    @Query("select * from pending_sync where instr(payload, '\"student_local_id\":\"' || :studentId || '\"') > 0 order by rowid limit :limit")
+    suspend fun pendingSyncForStudent(studentId: String, limit: Int): List<PendingSyncEntity>
+
+    @Query("select * from learning_session where studentId = :studentId and sessionType = 'DIAGNOSTICO' and status = 'COMPLETED' order by endedAt, id limit 1")
+    suspend fun getFirstCompletedDiagnosticSession(studentId: String): LearningSessionEntity?
     @Query("select * from local_exercise order by updatedAt desc limit 1")
     suspend fun getCurrentExercise(): LocalExerciseEntity?
 
@@ -160,15 +218,24 @@ interface OfflineLearningDao {
     """)
     suspend fun getLatestCompletedPracticePerformances(studentId: String): List<RecentPracticePerformanceRow>
 
+    @Query("select * from learning_session where studentId = :studentId and sessionType = 'PRACTICA' and status = 'COMPLETED' and startedAt >= :after order by endedAt, startedAt, id")
+    suspend fun getCompletedPracticeSessions(studentId: String, after: Long): List<LearningSessionEntity>
+
     @Query("""
         select s.id as sessionId, s.startedAt as startedAt, s.endedAt as endedAt,
-               s.status as sessionStatus, e.id as exerciseId, e.content as exerciseName,
+               s.status as sessionStatus, e.id as exerciseId, e.axis as axis, e.content as exerciseName,
                a.answer as answer, e.expectedAnswer as expectedAnswer,
                a.isCorrect as isCorrect, a.elapsedMillis as elapsedMillis
         from learning_session s
         join exercise_attempt a on a.sessionId = s.id
         join local_exercise e on e.id = a.exerciseId
         where s.studentId = :studentId
+          and not exists (
+            select 1 from exercise_attempt newer
+            join learning_session newerSession on newerSession.id = newer.sessionId
+            where newerSession.studentId = s.studentId and newer.exerciseId = a.exerciseId
+              and (newer.createdAt > a.createdAt or (newer.createdAt = a.createdAt and newer.id > a.id))
+          )
         order by s.startedAt desc, a.createdAt asc
     """)
     suspend fun getPracticeProgress(studentId: String): List<PracticeProgressRow>
@@ -184,6 +251,9 @@ interface OfflineLearningDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun enqueueSync(item: PendingSyncEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun enqueueSyncIfAbsent(item: PendingSyncEntity)
 
     @Query("select * from pending_sync order by createdAt asc limit :limit")
     suspend fun pendingSync(limit: Int): List<PendingSyncEntity>
@@ -211,6 +281,9 @@ interface OfflineLearningDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun saveDiagnosticResult(result: StudentDiagnosticResultEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun replaceDiagnosticResult(result: StudentDiagnosticResultEntity)
 
     @Query("select * from learning_session where studentId = :studentId and sessionType = 'DIAGNOSTICO' and status = 'COMPLETED' order by endedAt desc limit 1")
     suspend fun getCompletedDiagnosticSession(studentId: String): LearningSessionEntity?
@@ -242,9 +315,10 @@ interface OfflineLearningDao {
         HandwritingStrokeEntity::class,
         PerformanceMetricEntity::class,
         PendingSyncEntity::class,
-        StudentDiagnosticResultEntity::class
+        StudentDiagnosticResultEntity::class,
+        CachedStudentProfilesEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = true
 )
 abstract class OfflineDatabase : RoomDatabase() {
@@ -252,6 +326,18 @@ abstract class OfflineDatabase : RoomDatabase() {
 }
 
 object OfflineDatabaseMigrations {
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS cached_student_profiles (accountId TEXT NOT NULL PRIMARY KEY, profilesJson TEXT NOT NULL, updatedAt INTEGER NOT NULL)"
+            )
+        }
+    }
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("ALTER TABLE learning_session ADD COLUMN planJson TEXT NOT NULL DEFAULT ''")
+        }
+    }
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(database: SupportSQLiteDatabase) {
             database.execSQL("ALTER TABLE local_exercise ADD COLUMN expectedTimeMillis INTEGER NOT NULL DEFAULT 30000")

@@ -16,6 +16,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,11 +34,11 @@ import androidx.compose.ui.unit.sp
 import cl.kmat.ia.presentation.design.KMatBackground
 import cl.kmat.ia.presentation.design.KMatGreen
 import cl.kmat.ia.presentation.design.KMatInk
-import cl.kmat.ia.presentation.design.KMatPrimaryButton
+import cl.kmat.ia.R
 
 @Composable
-fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
-    SessionCompletionAudio()
+fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit, onContinue: () -> Unit) {
+    SessionCompletionAudio(R.raw.session_lo_lograste)
     val correct = outcomes.count { it.isCorrect }
     val total = outcomes.size
     val percent = if (total == 0) 0 else correct * 100 / total
@@ -55,6 +61,7 @@ fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         SummaryHeading("¡Sesión completada!", compact = true)
+                        SummaryActions(onHome, onContinue)
                         Text(message, color = KMatInk, fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                         Text("Completaste $total ${if (total == 1) "ejercicio" else "ejercicios"}", color = KMatInk.copy(alpha = .76f), fontSize = 14.sp, textAlign = TextAlign.Center)
                         Box(Modifier.size(82.dp).clip(CircleShape).background(KMatGreen), contentAlignment = Alignment.Center) {
@@ -63,7 +70,6 @@ fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
                                 Text("correctas", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        KMatPrimaryButton("Volver al inicio", onHome, Modifier.fillMaxWidth())
                     }
                     Column(
                         Modifier.weight(1.1f).verticalScroll(rememberScrollState()),
@@ -97,6 +103,7 @@ fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                SummaryActions(onHome, onContinue)
                 Text(message, color = KMatInk, fontSize = 23.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 Text("Completaste $total ${if (total == 1) "ejercicio" else "ejercicios"}", color = KMatInk.copy(alpha = .76f), fontSize = 17.sp)
                 Box(Modifier.size(112.dp).clip(CircleShape).background(KMatGreen), contentAlignment = Alignment.Center) {
@@ -130,8 +137,35 @@ fun SessionSummaryScreen(outcomes: List<ExerciseOutcome>, onHome: () -> Unit) {
                     }
                 }
             }
-            KMatPrimaryButton("Volver al inicio", onHome, Modifier.fillMaxWidth().padding(bottom = 12.dp))
         }
+        }
+    }
+}
+
+@Composable
+private fun SummaryActions(onHome: () -> Unit, onContinue: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedButton(
+            onClick = onHome,
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(2.dp, KMatInk),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.White.copy(alpha = .9f),
+                contentColor = KMatInk
+            ),
+            contentPadding = PaddingValues(horizontal = 6.dp)
+        ) {
+            Text("Ir al inicio", fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        }
+        Button(
+            onClick = onContinue,
+            modifier = Modifier.weight(1f).height(52.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = KMatGreen, contentColor = Color.White),
+            contentPadding = PaddingValues(horizontal = 6.dp)
+        ) {
+            Text("Seguir practicando", fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
     }
 }

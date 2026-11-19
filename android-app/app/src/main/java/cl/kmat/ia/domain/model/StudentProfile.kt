@@ -6,6 +6,28 @@ data class StudentProfile(
     val educationLevel: String
 )
 
+data class StudentTeachingGroup(
+    val id: String,
+    val name: String,
+    val teacherNames: String,
+    val joinedAt: String
+)
+
+sealed interface StudentTeachingGroupsResult {
+    data class Success(val groups: List<StudentTeachingGroup>) : StudentTeachingGroupsResult
+    data object NotConfigured : StudentTeachingGroupsResult
+    data object Unauthorized : StudentTeachingGroupsResult
+    data object NetworkError : StudentTeachingGroupsResult
+}
+
+sealed interface LeaveTeachingGroupResult {
+    data object Success : LeaveTeachingGroupResult
+    data object NotFound : LeaveTeachingGroupResult
+    data object NotConfigured : LeaveTeachingGroupResult
+    data object Unauthorized : LeaveTeachingGroupResult
+    data object NetworkError : LeaveTeachingGroupResult
+}
+
 sealed interface StudentProfilesResult {
     data class Success(val profiles: List<StudentProfile>) : StudentProfilesResult
     data object NotConfigured : StudentProfilesResult

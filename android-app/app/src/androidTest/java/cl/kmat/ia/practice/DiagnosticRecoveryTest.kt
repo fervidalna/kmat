@@ -79,7 +79,7 @@ class DiagnosticRecoveryTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, OfflineDatabase::class.java).build()
         try {
-            block(database, RoomLearningSessionRepository(database, context, downloadRemoteProgress = { null }))
+            block(database, RoomLearningSessionRepository(database, context, syncBeforeUse = {}))
         } finally {
             database.close()
         }

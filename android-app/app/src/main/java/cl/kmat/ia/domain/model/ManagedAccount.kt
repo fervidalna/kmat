@@ -21,4 +21,5 @@ sealed interface ManagedAccountActionResult {
     data object NotFound : ManagedAccountActionResult
     data object NotConfigured : ManagedAccountActionResult
     data object NetworkError : ManagedAccountActionResult
+    data class Failed(val reason: String) : ManagedAccountActionResult
 }

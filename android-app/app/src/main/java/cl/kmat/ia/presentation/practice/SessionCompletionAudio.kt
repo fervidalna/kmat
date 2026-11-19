@@ -20,11 +20,11 @@ import cl.kmat.ia.R
 
 /** A bundled recording: no TTS service, download, or network call at playback time. */
 @Composable
-internal fun SessionCompletionAudio() {
+internal fun SessionCompletionAudio(@androidx.annotation.RawRes audioRes: Int = R.raw.session_felicitaciones) {
     var hasPlayed by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(context, lifecycle) {
+    DisposableEffect(context, lifecycle, audioRes) {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val attributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -56,7 +56,7 @@ internal fun SessionCompletionAudio() {
                     release()
                     return
                 }
-                player = MediaPlayer.create(context, R.raw.session_felicitaciones, attributes, 0)
+                player = MediaPlayer.create(context, audioRes, attributes, 0)
                 val recording = player
                 if (recording == null) {
                     release()

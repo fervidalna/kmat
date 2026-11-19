@@ -71,7 +71,9 @@ fun StudentProfilesScreen(
     onSelect: (StudentProfile) -> Unit,
     onBack: () -> Unit,
     onAuthenticationRequired: () -> Unit = {},
-    backLabel: String = "Volver"
+    backLabel: String = "Volver",
+    onProfilesLoaded: (List<StudentProfile>) -> Unit = {},
+    onPreparePractice: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var profiles by remember { mutableStateOf<List<StudentProfile>>(emptyList()) }
@@ -80,10 +82,12 @@ fun StudentProfilesScreen(
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var offlineNotice by remember { mutableStateOf<String?>(null) }
     var hasLoadedProfiles by remember { mutableStateOf(false) }
     var reloadToken by remember { mutableStateOf(0) }
     var showAddForm by remember { mutableStateOf(false) }
     var pendingDeletion by remember { mutableStateOf<StudentProfile?>(null) }
+    var deletionNameConfirmation by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf(false) }
     var deletionMode by remember { mutableStateOf(false) }
     var deletionError by remember { mutableStateOf<String?>(null) }
@@ -94,45 +98,86 @@ fun StudentProfilesScreen(
     var joinError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(repository, reloadToken) {
+        error = null
+        offlineNotice = null
+        onPreparePractice()
+        val cachedProfiles = repository.cachedMine()
+        if (cachedProfiles != null) {
+            profiles = cachedProfiles
+            onProfilesLoaded(cachedProfiles)
+            hasLoadedProfiles = true
+            showAddForm = false
+            loading = false
+            offlineNotice = "Perfiles guardados en este dispositivo; puedes continuar sin conexión."
+        } else {
             loading = true
-            error = null
-            val result = repository.listMine()
-            if (result == StudentProfilesResult.Unauthorized) {
+        }
+
+        when (val result = repository.listMine()) {
+            is StudentProfilesResult.Success -> {
+                profiles = result.profiles
+                onProfilesLoaded(result.profiles)
+                hasLoadedProfiles = true
+                showAddForm = false
+                offlineNotice = if (cachedProfiles != null && result.profiles == cachedProfiles) {
+                    "Perfiles guardados en este dispositivo; puedes continuar sin conexión."
+                } else null
+            }
+            StudentProfilesResult.Unauthorized -> {
                 onAuthenticationRequired()
                 return@LaunchedEffect
             }
-            when (result) {
-                is StudentProfilesResult.Success -> {
-                    profiles = result.profiles
-                    hasLoadedProfiles = true
-                    showAddForm = false
-                }
-                StudentProfilesResult.NotConfigured -> error = "La conexión segura con Supabase aún no está configurada."
-                StudentProfilesResult.Unauthorized -> error = "Inicia sesión nuevamente para gestionar los perfiles."
-                StudentProfilesResult.PermissionDenied -> error = "No se pudieron leer tus perfiles por un problema de permisos. Tus perfiles guardados no se han eliminado."
-                StudentProfilesResult.ServiceUnavailable -> error = "El servicio de perfiles no está disponible. Inténtalo nuevamente más tarde."
-                StudentProfilesResult.InvalidResponse -> error = "No se pudo interpretar la lista de perfiles. Intenta cargarla nuevamente."
-                StudentProfilesResult.NetworkError -> error = "No se pudieron cargar los perfiles. Comprueba tu conexión."
+            StudentProfilesResult.NotConfigured -> {
+                if (cachedProfiles == null) error = "La conexión segura con Supabase aún no está configurada."
             }
-            loading = false
+            StudentProfilesResult.PermissionDenied -> error = "No se pudieron leer tus perfiles por un problema de permisos. Tus perfiles guardados no se han eliminado."
+            StudentProfilesResult.ServiceUnavailable -> {
+                if (cachedProfiles == null) error = "El servicio de perfiles no está disponible. Inténtalo nuevamente más tarde."
+                else offlineNotice = "Sin conexión al servicio. Se muestran los perfiles guardados en este dispositivo."
+            }
+            StudentProfilesResult.InvalidResponse -> {
+                if (cachedProfiles == null) error = "No se pudo interpretar la lista de perfiles. Intenta cargarla nuevamente."
+                else offlineNotice = "No se pudo actualizar la lista. Se muestran los perfiles guardados en este dispositivo."
+            }
+            StudentProfilesResult.NetworkError -> {
+                if (cachedProfiles == null) error = "No se pudieron cargar los perfiles. Comprueba tu conexión."
+                else offlineNotice = "Sin conexión. Se muestran los perfiles guardados en este dispositivo."
+            }
+        }
+        loading = false
     }
 
     pendingDeletion?.let { profile ->
+        val canConfirmDeletion = deletionNameConfirmation.trim().equals(profile.name.trim(), ignoreCase = true)
         AlertDialog(
-            onDismissRequest = { if (!deleting) pendingDeletion = null },
+            onDismissRequest = {
+                if (!deleting) {
+                    pendingDeletion = null
+                    deletionNameConfirmation = ""
+                }
+            },
             title = { Text("¿Estás seguro de que quieres eliminar el perfil de ${profile.name}?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Se borrarán definitivamente este perfil y sus datos de aprendizaje. Esta acción no se puede deshacer.")
+                    Text("Para confirmar, escribe el nombre del perfil: ${profile.name}")
+                    OutlinedTextField(
+                        value = deletionNameConfirmation,
+                        onValueChange = { deletionNameConfirmation = it },
+                        label = { Text("Nombre del perfil") },
+                        singleLine = true,
+                        enabled = !deleting,
+                        modifier = Modifier.fillMaxWidth().testTag("delete-profile-name-confirmation")
+                    )
                     deletionError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
             confirmButton = {
                 TextButton(
-                    enabled = !deleting,
+                    enabled = !deleting && canConfirmDeletion,
                     modifier = Modifier.testTag("confirm-delete-profile"),
                     onClick = {
-                        if (!deleting) {
+                        if (!deleting && canConfirmDeletion) {
                             deleting = true
                             deletionError = null
                             scope.launch {
@@ -173,7 +218,10 @@ fun StudentProfilesScreen(
                 }
             },
             dismissButton = {
-                TextButton(enabled = !deleting, onClick = { pendingDeletion = null }) { Text("Cancelar") }
+                TextButton(enabled = !deleting, onClick = {
+                    pendingDeletion = null
+                    deletionNameConfirmation = ""
+                }) { Text("Cancelar") }
             }
         )
     }
@@ -272,6 +320,7 @@ fun StudentProfilesScreen(
                     }
                     if (!showAddForm) {
                         successMessage?.let { Text(it, color = KMatInk, textAlign = TextAlign.Center) }
+                        offlineNotice?.let { Text(it, color = KMatInk, textAlign = TextAlign.Center) }
                     }
                     if (!showAddForm && !loading) {
                         if (profiles.isNotEmpty()) {
@@ -301,6 +350,7 @@ fun StudentProfilesScreen(
                                         pendingGroupLink = profile
                                     },
                                     onDelete = {
+                                        deletionNameConfirmation = ""
                                         deletionError = null
                                         successMessage = null
                                         pendingDeletion = profile

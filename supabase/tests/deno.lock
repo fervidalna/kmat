@@ -1,0 +1,11 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:@electric-sql/pglite@0.3.9": "0.3.9"
+  },
+  "npm": {
+    "@electric-sql/pglite@0.3.9": {
+      "integrity": "sha512-7S0uzvxA2HqvK8uaDKr2T12C0fq2OMxVyM8eaoIZjtqBJDYURfjORa4aYwk/fOnLwx5d6b4n7n0mcpOzNGlLwg=="
+    }
+  }
+}

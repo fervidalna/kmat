@@ -11,7 +11,10 @@ import cl.kmat.ia.data.local.PendingSyncEntity
 import cl.kmat.ia.data.local.PerformanceMetricEntity
 import cl.kmat.ia.data.local.StudentDiagnosticResultEntity
 import cl.kmat.ia.data.sync.LearningSyncScheduler
-import cl.kmat.ia.data.sync.RemoteProgressRecord
+import cl.kmat.ia.data.sync.toSyncJson
+import cl.kmat.ia.data.sync.toSyncExercise
+import cl.kmat.ia.data.sync.toLocalExercise
+import cl.kmat.ia.domain.repository.SavedExerciseAnswer
 import cl.kmat.ia.domain.model.Exercise
 import cl.kmat.ia.domain.model.ExercisePerformance
 import cl.kmat.ia.domain.model.HandwritingStroke
@@ -25,52 +28,138 @@ import cl.kmat.ia.domain.repository.LearningSessionRepository
 import cl.kmat.ia.domain.repository.SavedAttempt
 import cl.kmat.ia.domain.usecase.AdaptiveLearningEngine
 import cl.kmat.ia.domain.usecase.AdaptivePracticeAssigner
+import cl.kmat.ia.domain.usecase.MasteryAttempt
+import cl.kmat.ia.domain.usecase.MasterySession
+import cl.kmat.ia.domain.usecase.SubjectMastery
+import cl.kmat.ia.domain.usecase.SubjectMasteryEngine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
 
 class RoomLearningSessionRepository(
     private val database: OfflineDatabase,
     private val applicationContext: Context,
-    private val downloadRemoteProgress: suspend () -> List<RemoteProgressRecord>?,
+    private val syncBeforeUse: suspend (String) -> Unit = {},
+    private val claimRemoteSession: suspend (String, String, String, Long) -> String? = { _, _, _, _ -> null },
     private val downloadTeacherAssignments: suspend (String) -> List<Exercise>? = { null },
     private val adaptiveLearningEngine: AdaptiveLearningEngine = AdaptiveLearningEngine(),
     private val adaptivePracticeAssigner: AdaptivePracticeAssigner = AdaptivePracticeAssigner()
 ) : LearningSessionRepository {
     private val dao = database.learningDao()
+    private val catalogMutex = Mutex()
+    private var cachedExerciseCatalog: List<Exercise>? = null
+
+    private suspend fun calculateMastery(studentId: String, diagnostic: DiagnosticReport): Map<String, SubjectMastery> {
+        val sessions = dao.getCompletedPracticeSessions(studentId, diagnostic.completedAt).map { session ->
+            val plan = runCatching {
+                val json = JSONArray(session.planJson)
+                List(json.length()) { json.getJSONObject(it).toSyncExercise() }.associateBy { it.id }
+            }.getOrDefault(emptyMap())
+            MasterySession(dao.getSessionAttempts(session.id).mapNotNull { attempt ->
+                val exercise = plan[attempt.exerciseId] ?: return@mapNotNull null
+                // Older assignments lack verified subject and difficulty metadata.
+                if (exercise.teacherAssignmentId != null && exercise.contentCode != "DOCENTE_CLASIFICADO") return@mapNotNull null
+                MasteryAttempt(exercise.axis, exercise.difficulty, attempt.isCorrect)
+            })
+        }
+        val engine = SubjectMasteryEngine()
+        return diagnostic.axes.associate { axis -> axis.axis to engine.calculate(axis.axis, axis.level, sessions) }
+    }
+
+    override fun observeSessionSyncState(sessionId: String) = dao.observeSessionSyncState(sessionId)
+
+    override suspend fun synchronize(studentId: String) {
+        // A previously saved report might predate report synchronization.
+        database.withTransaction {
+            dao.getFirstCompletedDiagnosticSession(studentId)?.let { session ->
+                if (dao.getDiagnosticResult(studentId) != null) enqueueDiagnosticReport(studentId, session.id)
+            }
+        }
+        syncBeforeUse(studentId)
+    }
+
+    override suspend fun getSessionPlan(sessionId: String): List<Exercise> {
+        val json = dao.getSession(sessionId)?.planJson?.takeIf { it.isNotBlank() } ?: return emptyList()
+        val rows = JSONArray(json)
+        return List(rows.length()) { rows.getJSONObject(it).toSyncExercise() }
+    }
+
+    override suspend fun saveSessionPlan(sessionId: String, exercises: List<Exercise>) {
+        database.withTransaction {
+            val session = requireNotNull(dao.getSession(sessionId))
+            if (session.planJson.isNotBlank()) return@withTransaction
+            val plan = JSONArray(exercises.map { it.toSyncJson() })
+            exercises.forEach { dao.upsertExercise(it.toLocalExercise()) }
+            dao.saveSessionPlan(sessionId, plan.toString())
+            dao.enqueueSync(PendingSyncEntity(UUID.randomUUID().toString(), "SESSION_PLANNED",
+                JSONObject().put("local_session_id", sessionId).put("student_local_id", session.studentId)
+                    .put("exercises", plan).toString(), System.currentTimeMillis()))
+        }
+        LearningSyncScheduler.enqueueWhenConnected(applicationContext)
+    }
+
+    override suspend fun getSessionAnswers(sessionId: String): List<SavedExerciseAnswer> {
+        val plan = getSessionPlan(sessionId).associateBy { it.id }
+        return dao.getSessionAttempts(sessionId).distinctBy { it.exerciseId }.mapNotNull { attempt ->
+            val exercise = plan[attempt.exerciseId] ?: dao.getExercise(attempt.exerciseId)?.toDomain()
+            exercise?.let { SavedExerciseAnswer(it, attempt.answer, attempt.isCorrect, attempt.elapsedMillis) }
+        }
+    }
+
+    private suspend fun enqueueDiagnosticReport(studentId: String, sessionId: String) {
+        val report = dao.getDiagnosticResult(studentId) ?: return
+        val payload = JSONObject().put("student_local_id", studentId).put("local_session_id", sessionId)
+            .put("report", report.toSyncJson()).toString()
+        dao.enqueueSyncIfAbsent(PendingSyncEntity("diagnostic:$sessionId", "DIAGNOSTIC_RECORDED", payload, System.currentTimeMillis()))
+    }
 
     override suspend fun getDailySessionId(studentId: String): String = getSessionId(studentId, "PRACTICA")
 
     override suspend fun getDiagnosticSessionId(studentId: String): String = getSessionId(studentId, "DIAGNOSTICO")
 
-    private suspend fun getSessionId(studentId: String, sessionType: String): String = database.withTransaction {
-        val today = LocalDate.now().toString()
-        dao.getActiveSession(studentId, today, sessionType)?.id ?: LearningSessionEntity(
-            id = UUID.randomUUID().toString(),
-            studentId = studentId,
-            localDate = today,
-            startedAt = System.currentTimeMillis(),
-            sessionType = sessionType
-        ).also { session ->
-            dao.insertSession(session)
-            dao.enqueueSync(
-                PendingSyncEntity(
-                    id = UUID.randomUUID().toString(),
-                    operation = "SESSION_STARTED",
-                    payload = JSONObject()
-                        .put("local_session_id", session.id)
-                        .put("student_local_id", session.studentId)
-                        .put("local_date", session.localDate)
-                        .put("session_type", session.sessionType)
-                        .put("started_at", session.startedAt)
-                        .toString(),
-                    createdAt = System.currentTimeMillis()
+    private suspend fun getSessionId(studentId: String, sessionType: String): String {
+        dao.getResumableSession(studentId, sessionType)?.let { return it.id }
+        val proposedId = UUID.randomUUID().toString()
+        val startedAt = System.currentTimeMillis()
+        val claimed = withTimeoutOrNull(1_500L) {
+            claimRemoteSession(studentId, sessionType, proposedId, startedAt)
+        }
+        if (claimed != null) {
+            syncBeforeUse(studentId)
+            dao.getSession(claimed)?.let {
+                return if (it.status == "ACTIVE") it.id else getSessionId(studentId, sessionType)
+            }
+        }
+        return database.withTransaction {
+            val today = LocalDate.now().toString()
+            dao.getResumableSession(studentId, sessionType)?.id ?: LearningSessionEntity(
+                id = claimed ?: proposedId,
+                studentId = studentId,
+                localDate = today,
+                startedAt = startedAt,
+                sessionType = sessionType
+            ).also { session ->
+                dao.insertSession(session)
+                dao.enqueueSync(
+                    PendingSyncEntity(
+                        id = UUID.randomUUID().toString(),
+                        operation = "SESSION_STARTED",
+                        payload = JSONObject()
+                            .put("local_session_id", session.id)
+                            .put("student_local_id", session.studentId)
+                            .put("local_date", session.localDate)
+                            .put("session_type", session.sessionType)
+                            .put("started_at", session.startedAt)
+                            .toString(),
+                        createdAt = System.currentTimeMillis()
+                    )
                 )
-            )
-        }.id
-    }.also { LearningSyncScheduler.enqueueWhenConnected(applicationContext) }
+            }.id
+        }.also { LearningSyncScheduler.enqueueWhenConnected(applicationContext) }
+    }
 
     override suspend fun getOfflineExercise(): Exercise {
         return getOfflineExercises(LOCAL_STUDENT_ID).first()
@@ -106,6 +195,16 @@ class RoomLearningSessionRepository(
             LocalExerciseEntity("offline-sum-8-7", "Sumas de un dígito", "8 + 7 = ?", "15", 2, now, 25_000),
             LocalExerciseEntity("offline-sum-9-6", "Sumas de un dígito", "9 + 6 = ?", "15", 2, now, 25_000),
             LocalExerciseEntity("offline-sum-9-9", "Sumas de un dígito", "9 + 9 = ?", "18", 2, now, 25_000),
+            LocalExerciseEntity("trace-number-1", "Trazado de números", "Sigue los puntos para trazar el número 1", "1", 0, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-2", "Trazado de números", "Sigue los puntos para trazar el número 2", "2", 0, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-3", "Trazado de números", "Sigue los puntos para trazar el número 3", "3", 0, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-4", "Trazado de números", "Sigue los puntos para trazar el número 4", "4", 0, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-5", "Trazado de números", "Sigue los puntos para trazar el número 5", "5", 1, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-6", "Trazado de números", "Sigue los puntos para trazar el número 6", "6", 1, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-7", "Trazado de números", "Sigue los puntos para trazar el número 7", "7", 1, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-8", "Trazado de números", "Sigue los puntos para trazar el número 8", "8", 2, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-9", "Trazado de números", "Sigue los puntos para trazar el número 9", "9", 2, now, 25_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
+            LocalExerciseEntity("trace-number-10", "Trazado de números", "Sigue los puntos para trazar el número 10", "10", 2, now, 30_000, "NUMEROS_OPERACIONES", "TRAZADO_NUMEROS", "BASICO_1"),
             LocalExerciseEntity("diag-pattern-1-1", "Patrones numéricos", "Completa la secuencia: 1, 2, 3, __", "4", 0, now, 15_000, "PATRONES_ALGEBRA", "PATRONES_NUMERICOS", "BASICO_1"),
             LocalExerciseEntity("diag-pattern-1-2", "Patrones numéricos", "Completa la secuencia: 2, 4, 6, __", "8", 0, now, 20_000, "PATRONES_ALGEBRA", "PATRONES_NUMERICOS", "BASICO_1"),
             LocalExerciseEntity("diag-pattern-2-1", "Patrones numéricos", "Completa la secuencia: 5, 10, 15, __", "20", 1, now, 20_000, "PATRONES_ALGEBRA", "PATRONES_NUMERICOS", "BASICO_1"),
@@ -137,68 +236,79 @@ class RoomLearningSessionRepository(
                 contentCode = when {
                     exercise.id.startsWith(AdaptiveLearningEngine.COUNT_PREFIX) -> "CONTEO"
                     exercise.id.startsWith(AdaptiveLearningEngine.SUM_PREFIX) -> "ADICION"
+                    exercise.id.startsWith("trace-number-") -> "TRAZADO_NUMEROS"
                     else -> "GENERAL"
                 },
                 educationLevel = if (exercise.difficulty >= 2) "BASICO_2" else "BASICO_1"
             )
         }.map { exercise -> exercise.copy(visualSpec = visualSpecFor(exercise)) }
-        catalog.forEach { exercise ->
-            val stored = dao.getExercise(exercise.id)
-            if (stored == null || stored.expectedAnswer != exercise.expectedAnswer ||
-                stored.statement != exercise.statement || stored.difficulty != exercise.difficulty ||
-                stored.expectedTimeMillis != exercise.expectedTimeMillis || stored.axis != exercise.axis ||
-                stored.contentCode != exercise.contentCode || stored.educationLevel != exercise.educationLevel ||
-                stored.visualSpec != exercise.visualSpec
-            ) dao.upsertExercise(exercise)
+        catalogMutex.lock()
+        val exerciseCatalog = try {
+            var preparedCatalog = cachedExerciseCatalog
+            if (preparedCatalog == null) {
+                for (exercise in catalog) {
+                    val stored = dao.getExercise(exercise.id)
+                    if (stored == null || stored.expectedAnswer != exercise.expectedAnswer ||
+                        stored.statement != exercise.statement || stored.difficulty != exercise.difficulty ||
+                        stored.expectedTimeMillis != exercise.expectedTimeMillis || stored.axis != exercise.axis ||
+                        stored.contentCode != exercise.contentCode || stored.educationLevel != exercise.educationLevel ||
+                        stored.visualSpec != exercise.visualSpec
+                    ) dao.upsertExercise(exercise)
+                }
+                preparedCatalog = catalog.map { it.toDomain() }
+                cachedExerciseCatalog = preparedCatalog
+            }
+            requireNotNull(preparedCatalog)
+        } finally {
+            catalogMutex.unlock()
         }
 
-        if (diagnosticBank) return catalog.mapNotNull { dao.getExercise(it.id)?.toDomain() }
+        if (diagnosticBank) return exerciseCatalog
 
+        // Bring a small number of unresolved mistakes back in the next practice session.
+        // They are kept in the attempt history; a later correct answer becomes the current result.
+        val retryExercises = dao.getIncorrectPracticeExercises(studentId)
+            .take(MAX_RETRIES_PER_SESSION)
+            .map { it.toDomain() }
+        val retryIds = retryExercises.map { it.id }.toSet()
         val assignedExercises = withTimeoutOrNull(3_000L) {
             runCatching { downloadTeacherAssignments(studentId) }.getOrNull()
-        }.orEmpty()
-        if (assignedExercises.isNotEmpty()) {
-            assignedExercises.forEach { exercise ->
-                dao.upsertExercise(LocalExerciseEntity(
-                    exercise.id, exercise.content, exercise.statement, exercise.expectedAnswer, exercise.difficulty, now,
-                    exercise.expectedTimeMillis
-                ))
-            }
-            return assignedExercises.take(AdaptiveLearningEngine.SESSION_EXERCISE_COUNT)
-        }
+        }.orEmpty().filter { it.id !in dao.getAnsweredExerciseIds(studentId) && it.id !in retryIds }
+            .distinctBy { it.id }.take((AdaptiveLearningEngine.SESSION_EXERCISE_COUNT - retryExercises.size).coerceAtLeast(0))
+        assignedExercises.forEach { exercise -> dao.upsertExercise(exercise.toLocalExercise()) }
+        val fixedExercises = (retryExercises + assignedExercises).distinctBy { it.id }
+        val remainingCount = AdaptiveLearningEngine.SESSION_EXERCISE_COUNT - fixedExercises.size
+        if (remainingCount == 0) return fixedExercises
 
         val diagnosticReport = dao.getDiagnosticResult(studentId)?.toDiagnosticReport()
         if (diagnosticReport != null) {
             val recentPractice = dao.getLatestCompletedPracticePerformances(studentId).map { row ->
                 ExercisePerformance(row.exerciseId, row.isCorrect, row.elapsedMillis, row.axis, row.expectedTimeMillis, row.difficulty)
             }
-            val exerciseBank = catalog.map { entity ->
-                requireNotNull(dao.getExercise(entity.id)).toDomain()
-            }
-            val selected = adaptivePracticeAssigner.chooseNextSession(exerciseBank, diagnosticReport, recentPractice)
-            if (selected.isNotEmpty()) return selected
+            val selected = adaptivePracticeAssigner.chooseNextSession(
+                exerciseCatalog, diagnosticReport, recentPractice,
+                count = remainingCount,
+                previouslyAnswered = dao.getAnsweredExerciseIds(studentId).toSet(),
+                masteryByAxis = calculateMastery(studentId, diagnosticReport)
+            )
+            val combined = (fixedExercises + selected).distinctBy { it.id }
+            if (combined.size == AdaptiveLearningEngine.SESSION_EXERCISE_COUNT) return combined
         }
 
         // La selección de ejercicios debe seguir funcionando si falla el backend remoto.
-        val remotePreviousSession = withTimeoutOrNull(3_000L) {
-            runCatching { downloadRemoteProgress() }.getOrNull()
-        }
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { remoteRows ->
-                val latestSessionStart = remoteRows.maxOf { it.startedAt }
-                remoteRows.filter { it.startedAt == latestSessionStart }.map {
-                    ExercisePerformance(it.exerciseType, it.isCorrect, it.elapsedMillis)
-                }
-            }
-        val previousSession = remotePreviousSession ?: dao.getLatestCompletedSessionAttempts(studentId).map {
+        val previousSession = dao.getLatestCompletedSessionAttempts(studentId).map {
             ExercisePerformance(it.exerciseId, it.isCorrect, it.elapsedMillis)
         }
         val selectedIds = adaptiveLearningEngine.chooseNextExerciseIds(previousSession)
-        val catalogById = catalog.associateBy { it.id }
-        return selectedIds.map { exerciseId ->
-            val exercise = requireNotNull(catalogById[exerciseId])
-            requireNotNull(dao.getExercise(exercise.id)).toDomain()
-        }
+        val catalogById = exerciseCatalog.associateBy { it.id }
+        val fixedIds = fixedExercises.map { it.id }.toSet()
+        val practice = (selectedIds.mapNotNull(catalogById::get) + exerciseCatalog.shuffled())
+            .distinctBy { it.id }
+            .filterNot { it.id in fixedIds }
+            .take(remainingCount)
+        val combined = (fixedExercises + practice).distinctBy { it.id }
+        check(combined.size == AdaptiveLearningEngine.SESSION_EXERCISE_COUNT) { "No hay suficientes ejercicios para completar la sesión" }
+        return combined
     }
 
     override suspend fun saveDiagnosticReport(studentId: String, report: DiagnosticReport) {
@@ -219,21 +329,31 @@ class RoomLearningSessionRepository(
         ))
     }
 
-    override suspend fun hasCompletedDiagnostic(studentId: String): Boolean = database.withTransaction {
-        if (dao.getDiagnosticResult(studentId) != null) return@withTransaction true
-        // Older builds could mark the session completed before persisting its report.
-        // Recover only a completed diagnostic with sufficient evidence, never an abandoned test.
-        val session = dao.getCompletedDiagnosticSession(studentId) ?: return@withTransaction false
-        val answers = dao.getDiagnosticPerformances(session.id).map {
-            DiagnosticAnswer(it.exerciseId, it.axis, it.difficulty, it.isCorrect, it.elapsedMillis, it.expectedTimeMillis)
+    override suspend fun hasCompletedDiagnostic(studentId: String): Boolean {
+        // Seed metadata before recovering reports created by older app versions.
+        getOfflineExercises(studentId, diagnosticBank = true)
+        return database.withTransaction {
+            if (dao.getDiagnosticResult(studentId) != null) return@withTransaction true
+            // Older builds could mark the session completed before persisting its report.
+            // Recover only a completed diagnostic with sufficient evidence, never an abandoned test.
+            val session = dao.getFirstCompletedDiagnosticSession(studentId) ?: return@withTransaction false
+            val answers = dao.getDiagnosticPerformances(session.id).map {
+                DiagnosticAnswer(it.exerciseId, it.axis, it.difficulty, it.isCorrect, it.elapsedMillis, it.expectedTimeMillis)
+            }
+            if (answers.size < DiagnosticAssessmentEngine.INITIAL_QUESTIONS ||
+                !DiagnosticAssessmentEngine.AXES.all { axis -> answers.count { it.axis == axis } >= 2 }
+            ) return@withTransaction false
+            saveDiagnosticReport(studentId, DiagnosticAssessmentEngine().buildReport(answers).copy(
+                completedAt = session.endedAt ?: session.startedAt
+            ))
+            enqueueDiagnosticReport(studentId, session.id)
+            true
         }
-        if (answers.size < DiagnosticAssessmentEngine.INITIAL_QUESTIONS ||
-            !DiagnosticAssessmentEngine.AXES.all { axis -> answers.count { it.axis == axis } >= 2 }
-        ) return@withTransaction false
-        saveDiagnosticReport(studentId, DiagnosticAssessmentEngine().buildReport(answers).copy(
-            completedAt = session.endedAt ?: session.startedAt
-        ))
-        true
+    }
+
+    override suspend fun getDiagnosticReport(studentId: String): DiagnosticReport? {
+        hasCompletedDiagnostic(studentId)
+        return dao.getDiagnosticResult(studentId)?.toDiagnosticReport()
     }
 
     override suspend fun completeDiagnosticSession(sessionId: String, studentId: String, report: DiagnosticReport) {
@@ -242,6 +362,7 @@ class RoomLearningSessionRepository(
             require(session.studentId == studentId && session.sessionType == "DIAGNOSTICO")
             saveDiagnosticReport(studentId, report)
             completeSessionLocally(sessionId, System.currentTimeMillis())
+            enqueueDiagnosticReport(studentId, sessionId)
         }
         LearningSyncScheduler.enqueueWhenConnected(applicationContext)
     }
@@ -289,23 +410,27 @@ class RoomLearningSessionRepository(
 
     override suspend fun getPracticeProgress(studentId: String): List<StudentSubjectProgress> {
         LearningSyncScheduler.enqueueWhenConnected(applicationContext)
-        val remoteRows = downloadRemoteProgress()
-        if (remoteRows != null) {
-            return buildProgress(remoteRows.map { row ->
-                val isCounting = row.exerciseType.startsWith(AdaptiveLearningEngine.COUNT_PREFIX) ||
-                    row.exerciseType.startsWith("CONTEO") || row.exerciseType == "SECUENCIA"
-                Triple(isCounting, row.startedAt, row.isCorrect to row.elapsedMillis)
+        getOfflineExercises(studentId, diagnosticBank = true)
+        val rows = dao.getPracticeProgress(studentId)
+        val recentByAxis = dao.getLatestCompletedPracticePerformances(studentId).groupBy { it.axis }
+        val masteryByAxis = dao.getDiagnosticResult(studentId)?.toDiagnosticReport()?.let { calculateMastery(studentId, it) }.orEmpty()
+        return buildProgress(rows.map { row ->
+            Triple(row.axis, row.startedAt, row.isCorrect to row.elapsedMillis)
+        }).mapIndexed { index, progress ->
+            val recent = recentByAxis[DiagnosticAssessmentEngine.AXES[index]].orEmpty()
+            progress.copy(mastery = masteryByAxis[DiagnosticAssessmentEngine.AXES[index]], latestPractice = recent.takeIf { it.isNotEmpty() }?.let {
+                cl.kmat.ia.domain.model.LatestPracticeSummary(
+                    correct = it.count { row -> row.isCorrect }, total = it.size,
+                    averageResponseMillis = it.map { row -> row.elapsedMillis }.average().toLong(),
+                    averageExpectedMillis = it.map { row -> row.expectedTimeMillis }.average().toLong()
+                )
             })
         }
-        val rows = dao.getPracticeProgress(studentId)
-        return buildProgress(rows.map { row ->
-            Triple(row.exerciseId.startsWith(AdaptiveLearningEngine.COUNT_PREFIX), row.startedAt, row.isCorrect to row.elapsedMillis)
-        })
     }
 
-    private fun buildProgress(rows: List<Triple<Boolean, Long, Pair<Boolean, Long>>>): List<StudentSubjectProgress> =
-        listOf(true, false).map { isCounting ->
-            val subjectRows = rows.filter { it.first == isCounting }
+    private fun buildProgress(rows: List<Triple<String, Long, Pair<Boolean, Long>>>): List<StudentSubjectProgress> =
+        DiagnosticAssessmentEngine.AXES.map { axis ->
+            val subjectRows = rows.filter { it.first == axis }
             val dailyRows = subjectRows.groupBy { row ->
                 LocalDate.ofInstant(
                     java.time.Instant.ofEpochMilli(row.second),
@@ -313,14 +438,10 @@ class RoomLearningSessionRepository(
                 )
             }
             StudentSubjectProgress(
-                subject = if (isCounting) "Conteo" else "Sumas",
+                subject = DiagnosticAssessmentEngine.AXIS_LABELS.getValue(axis),
                 correct = subjectRows.count { it.third.first },
                 incorrect = subjectRows.count { !it.third.first },
-                averageResponseMillis = subjectRows
-                    .takeIf { it.isNotEmpty() }
-                    ?.map { it.third.second }
-                    ?.average()
-                    ?.toLong() ?: 0L,
+                averageResponseMillis = subjectRows.map { it.third.second }.average().takeIf { subjectRows.isNotEmpty() }?.toLong() ?: 0L,
                 history = dailyRows.map { (date, dateRows) ->
                     SubjectProgressPoint(
                         dateEpochMillis = date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
@@ -331,7 +452,6 @@ class RoomLearningSessionRepository(
                 }.sortedBy { it.dateEpochMillis }
             )
         }
-
     override suspend fun saveAttempt(
         sessionId: String,
         exercise: Exercise,
@@ -340,11 +460,15 @@ class RoomLearningSessionRepository(
         strokes: List<HandwritingStroke>
     ): SavedAttempt = database.withTransaction {
         val session = requireNotNull(dao.getSession(sessionId)) { "La sesión local no existe" }
-        val attemptNumber = dao.countAttempts(sessionId, exercise.id) + 1
+        dao.getSessionAttempts(sessionId).firstOrNull { it.exerciseId == exercise.id }?.let {
+            return@withTransaction SavedAttempt(it.id, it.isCorrect)
+        }
+        require(session.status == "ACTIVE") { "Session already completed on another device" }
+        val attemptNumber = 1
         val isCorrect = answer.trim() == exercise.expectedAnswer.trim()
         val now = System.currentTimeMillis()
         val attempt = ExerciseAttemptEntity(
-            id = UUID.randomUUID().toString(),
+            id = UUID.nameUUIDFromBytes("$sessionId:${exercise.id}".toByteArray(Charsets.UTF_8)).toString(),
             sessionId = sessionId,
             exerciseId = exercise.id,
             answer = answer,
@@ -394,6 +518,7 @@ class RoomLearningSessionRepository(
         .put("local_attempt_id", attempt.id)
         .put("student_local_id", session.studentId)
         .put("exercise_local_id", exercise.id)
+        .put("exercise", exercise.toSyncJson())
         .put("teacher_assignment_id", exercise.teacherAssignmentId ?: JSONObject.NULL)
         .put("exercise_version_remote_id", exercise.remoteExerciseVersionId ?: JSONObject.NULL)
         .put("answer", attempt.answer)
@@ -471,5 +596,6 @@ class RoomLearningSessionRepository(
 
     private companion object {
         const val LOCAL_STUDENT_ID = "local-tomas"
+        const val MAX_RETRIES_PER_SESSION = 2
     }
 }

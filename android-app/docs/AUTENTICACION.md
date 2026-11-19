@@ -75,6 +75,12 @@ docente. Estas operaciones requieren la migración
 `20261025001000_herramientas_docente.sql`; sus funciones verifican el rol y el
 vínculo con la sala o el estudiante en Supabase.
 
-El botón **¿Olvidaste tu contraseña?** solicita el correo de recuperación a
-Supabase Auth. Configura en Supabase Auth la URL de redirección o `Site URL`
-que recibirá el enlace de recuperación y presentará el cambio de contraseña.
+El botón **¿Olvidaste tu contraseña?** inicia el flujo PKCE de Supabase y el correo vuelve a la app mediante `kmat://auth/reset-password`. La app guarda el verificador PKCE cifrado con Android Keystore y el enlace solo transporta un código de un solo uso. El enlace debe abrirse en el mismo teléfono donde se solicitó el cambio.
+
+En **Authentication → URL Configuration → Redirect URLs**, agrega:
+
+```text
+kmat://auth/reset-password
+```
+
+No se necesita una Edge Function para mostrar una página web. Supabase reescribe respuestas HTML de Edge Functions en dominios `*.supabase.co` a texto plano. Instala una nueva versión de Android que incluya el callback y solicita un correo nuevo para probarlo.

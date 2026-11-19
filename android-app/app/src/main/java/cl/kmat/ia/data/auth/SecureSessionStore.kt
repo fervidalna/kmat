@@ -57,6 +57,18 @@ class SecureSessionStore(context: Context) {
         preferences.edit().putString(DISPLAY_NAME, encrypt(displayName)).apply()
     }
 
+    fun savePasswordRecoveryVerifier(verifier: String) {
+        preferences.edit().putString(PASSWORD_RECOVERY_VERIFIER, encrypt(verifier)).apply()
+    }
+
+    fun loadPasswordRecoveryVerifier(): String? = runCatching {
+        preferences.getString(PASSWORD_RECOVERY_VERIFIER, null)?.let(::decrypt)
+    }.getOrNull()
+
+    fun clearPasswordRecoveryVerifier() {
+        preferences.edit().remove(PASSWORD_RECOVERY_VERIFIER).apply()
+    }
+
     fun saveActiveStudentId(studentId: String) {
         preferences.edit().putString(ACTIVE_STUDENT_ID, encrypt(studentId)).apply()
     }
@@ -133,5 +145,6 @@ class SecureSessionStore(context: Context) {
         const val USER_AREA = "user_area"
         const val DISPLAY_NAME = "display_name"
         const val ACTIVE_STUDENT_ID = "active_student_id"
+        const val PASSWORD_RECOVERY_VERIFIER = "password_recovery_verifier"
     }
 }

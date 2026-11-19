@@ -3,6 +3,7 @@ package cl.kmat.ia.data.auth
 import cl.kmat.ia.BuildConfig
 import cl.kmat.ia.domain.model.AuthSession
 import cl.kmat.ia.domain.model.PasswordResetResult
+import cl.kmat.ia.domain.model.PasswordUpdateResult
 import cl.kmat.ia.domain.model.SignInResult
 import cl.kmat.ia.domain.model.SignUpResult
 import cl.kmat.ia.domain.model.UserArea
@@ -13,6 +14,9 @@ import org.json.JSONTokener
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
 
 /** Cliente mínimo de Supabase Auth. Las contraseñas solo viven en memoria durante la solicitud HTTPS. */
 class SupabaseAuthRepository(
@@ -52,13 +56,75 @@ class SupabaseAuthRepository(
     override suspend fun requestPasswordReset(email: String): PasswordResetResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext PasswordResetResult.NotConfigured
         runCatching {
-            val response = post("/auth/v1/recover", JSONObject().put("email", email))
-            if (response.code in 200..299) PasswordResetResult.Requested else PasswordResetResult.NetworkError
-        }.getOrElse { PasswordResetResult.NetworkError }
+            val verifier = createCodeVerifier()
+            val challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII))
+            )
+            sessionStore.savePasswordRecoveryVerifier(verifier)
+            val redirectTo = java.net.URLEncoder.encode("kmat://auth/reset-password", Charsets.UTF_8.name())
+            val response = post(
+                "/auth/v1/recover?redirect_to=$redirectTo",
+                JSONObject()
+                    .put("email", email)
+                    .put("code_challenge", challenge)
+                    .put("code_challenge_method", "s256")
+            )
+            when (response.code) {
+                in 200..299 -> PasswordResetResult.Requested
+                429 -> {
+                    sessionStore.clearPasswordRecoveryVerifier()
+                    PasswordResetResult.RateLimited
+                }
+                else -> {
+                    sessionStore.clearPasswordRecoveryVerifier()
+                    PasswordResetResult.NetworkError
+                }
+            }
+        }.getOrElse {
+            sessionStore.clearPasswordRecoveryVerifier()
+            PasswordResetResult.NetworkError
+        }
     }
 
-    override suspend fun signUp(displayName: String, email: String, password: String): SignUpResult = withContext(Dispatchers.IO) {
+    override suspend fun updatePassword(authCode: String, newPassword: String): PasswordUpdateResult = withContext(Dispatchers.IO) {
+        val verifier = sessionStore.loadPasswordRecoveryVerifier()
+            ?: return@withContext PasswordUpdateResult.Failed
+        if (!isConfigured() || authCode.isBlank() || newPassword.isBlank()) {
+            sessionStore.clearPasswordRecoveryVerifier()
+            return@withContext PasswordUpdateResult.Failed
+        }
+
+        val exchange = runCatching {
+            post(
+                "/auth/v1/token?grant_type=pkce",
+                JSONObject().put("auth_code", authCode).put("code_verifier", verifier)
+            )
+        }.getOrElse {
+            sessionStore.clearPasswordRecoveryVerifier()
+            return@withContext PasswordUpdateResult.Failed
+        }
+        val session = if (exchange.code in 200..299) parseSession(exchange.body) else null
+        if (session == null) {
+            sessionStore.clearPasswordRecoveryVerifier()
+            return@withContext PasswordUpdateResult.Failed
+        }
+        val update = runCatching {
+            request("PUT", "/auth/v1/user", JSONObject().put("password", newPassword), session.accessToken)
+        }.getOrElse {
+            sessionStore.clearPasswordRecoveryVerifier()
+            return@withContext PasswordUpdateResult.Failed
+        }
+        sessionStore.clearPasswordRecoveryVerifier()
+        if (update.code in 200..299) PasswordUpdateResult.Updated else PasswordUpdateResult.Failed
+    }
+
+    override suspend fun signUp(displayName: String, email: String, password: String, area: UserArea): SignUpResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext SignUpResult.NotConfigured
+        val role = when (area) {
+            UserArea.LEARNING -> "RESPONSABLE"
+            UserArea.TEACHING -> "DOCENTE"
+            UserArea.ADMINISTRATION -> return@withContext SignUpResult.InvalidRequest
+        }
 
         runCatching {
             val response = post(
@@ -70,7 +136,7 @@ class SupabaseAuthRepository(
                         "data",
                         JSONObject()
                             .put("nombre_mostrado", displayName)
-                            .put("auto_rol", "RESPONSABLE")
+                            .put("auto_rol", role)
                     )
             )
             when (response.code) {
@@ -84,13 +150,22 @@ class SupabaseAuthRepository(
                     }
                         ?: run {
                             sessionStore.clear()
-                            SignUpResult.NetworkError
+                            SignUpResult.Failed(
+                                "Supabase creó la cuenta, pero no devolvió un rol para esta sesión. " +
+                                    "Revisa el trigger trg_auth_usuario_registrado y la función mi_area_usuario."
+                            )
                         }
                 } ?: SignUpResult.ConfirmationRequired
-                400, 422 -> SignUpResult.InvalidRequest
-                else -> SignUpResult.NetworkError
+                else -> SignUpResult.Failed(
+                    "Supabase respondió HTTP ${response.code}: ${describeError(response.body)}"
+                )
             }
-        }.getOrElse { SignUpResult.NetworkError }
+        }.getOrElse { error ->
+            SignUpResult.Failed(
+                "No se pudo completar la solicitud (${error.javaClass.simpleName}): " +
+                    (error.message?.takeIf { it.isNotBlank() } ?: "error sin detalle")
+            )
+        }
     }
 
     override suspend fun validAccessTokenOrNull(): String? = withContext(Dispatchers.IO) {
@@ -104,6 +179,8 @@ class SupabaseAuthRepository(
     override fun hasStoredSession(): Boolean = sessionStore.hasSession()
 
     override fun storedUserAreaOrNull() = sessionStore.loadUserArea()
+
+    override fun storedUserIdOrNull(): String? = sessionStore.load()?.userId
 
     override suspend fun validateStoredUserArea(): UserArea? = withContext(Dispatchers.IO) {
         val accessToken = validAccessTokenOrNull() ?: return@withContext null
@@ -173,12 +250,16 @@ class SupabaseAuthRepository(
     }.getOrNull()
 
     private fun post(path: String, body: JSONObject, bearerToken: String? = null): HttpResponse {
+        return request("POST", path, body, bearerToken)
+    }
+
+    private fun request(method: String, path: String, body: JSONObject, bearerToken: String? = null): HttpResponse {
         val baseUrl = BuildConfig.SUPABASE_URL.trimEnd('/')
         val url = URL(baseUrl + path)
         require(url.protocol.equals("https", ignoreCase = true)) { "Supabase debe usar HTTPS" }
 
         val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
+            requestMethod = method
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             doOutput = true
@@ -207,6 +288,18 @@ class SupabaseAuthRepository(
         )
     }.getOrNull()
 
+    private fun describeError(body: String): String {
+        val trimmed = body.trim()
+        if (trimmed.isEmpty()) return "el servidor no entregó detalles."
+        val parsed = runCatching {
+            val json = JSONObject(trimmed)
+            listOf("message", "msg", "error_description", "details", "hint", "code")
+                .mapNotNull { key -> json.optString(key).takeIf { it.isNotBlank() && it != "null" } }
+                .joinToString(" | ")
+        }.getOrNull()
+        return (parsed?.takeIf { it.isNotBlank() } ?: trimmed).take(600)
+    }
+
     private fun isConfigured(): Boolean =
         BuildConfig.SUPABASE_URL.isNotBlank() && BuildConfig.SUPABASE_ANON_KEY.isNotBlank()
 
@@ -218,5 +311,11 @@ class SupabaseAuthRepository(
         const val CONNECT_TIMEOUT_MS = 15_000
         const val READ_TIMEOUT_MS = 20_000
         const val EXPIRY_MARGIN_SECONDS = 60L
+    }
+
+    private fun createCodeVerifier(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 }

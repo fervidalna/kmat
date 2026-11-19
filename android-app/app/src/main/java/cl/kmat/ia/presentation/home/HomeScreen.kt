@@ -134,6 +134,8 @@ fun HomeScreen(
             }
         )
     }
+
+
 }
 
 @Composable
@@ -174,10 +176,7 @@ private fun TabletHomeContent(maxWidth: androidx.compose.ui.unit.Dp, displayName
         }
     }
     Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-        KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.width(270.dp))
-        KMatSecondaryButton("⚙  Acceso adulto", { onNavigate(Route.AdultAuth) }, Modifier.width(270.dp))
-    }
+    KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.width(270.dp))
 }
 
 @Composable
@@ -193,8 +192,6 @@ private fun PhoneHomeContent(displayName: String, onNavigate: (String) -> Unit, 
     onJoinRoom?.let { KMatSecondaryButton("Unirse a una sala", it, Modifier.fillMaxWidth()) }
     Spacer(Modifier.height(18.dp))
     KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.fillMaxWidth())
-    Spacer(Modifier.height(10.dp))
-    KMatSecondaryButton("⚙  Acceso adulto", { onNavigate(Route.AdultAuth) }, Modifier.fillMaxWidth())
 }
 
 @Composable
@@ -220,10 +217,7 @@ private fun PhoneLandscapeHomeContent(
                 KMatSecondaryButton("⭐  Mi progreso", { onNavigate(Route.Progress) }, Modifier.weight(1f))
                 onJoinRoom?.let { KMatSecondaryButton("Unirse a sala", it, Modifier.weight(1f)) }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.weight(1f))
-                KMatSecondaryButton("⚙  Acceso adulto", { onNavigate(Route.AdultAuth) }, Modifier.weight(1f))
-            }
+            KMatSecondaryButton("👥  Cambiar perfil", { onNavigate(Route.ProfileSelection) }, Modifier.fillMaxWidth())
         }
     }
 }

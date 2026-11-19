@@ -47,6 +47,7 @@ import cl.kmat.ia.domain.model.ManagedAccount
 import cl.kmat.ia.domain.model.ManagedAccountActionResult
 import cl.kmat.ia.domain.model.ManagedAccountsResult
 import cl.kmat.ia.domain.model.PasswordResetResult
+import cl.kmat.ia.domain.model.UserArea
 import cl.kmat.ia.domain.repository.ManagedAccountsRepository
 import cl.kmat.ia.presentation.design.KMatBackground
 import cl.kmat.ia.presentation.design.KMatInk
@@ -62,6 +63,7 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
     var error by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var pendingDeletion by remember { mutableStateOf<ManagedAccount?>(null) }
+    var pendingRoleChange by remember { mutableStateOf<Pair<ManagedAccount, UserArea>?>(null) }
     var busyAccountId by remember { mutableStateOf<String?>(null) }
 
     fun loadAccounts() {
@@ -80,6 +82,46 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
 
     LaunchedEffect(repository) { loadAccounts() }
 
+    pendingRoleChange?.let { (account, area) ->
+        val roleName = if (area == UserArea.TEACHING) "docente" else "responsable"
+        AlertDialog(
+            onDismissRequest = { if (busyAccountId == null) pendingRoleChange = null },
+            title = { Text("¿Cambiar el tipo de cuenta?") },
+            text = { Text("${account.displayName} pasará a tener una cuenta de $roleName. El cambio se aplicará al volver a iniciar sesión.") },
+            confirmButton = {
+                TextButton(
+                    enabled = busyAccountId == null,
+                    onClick = {
+                        busyAccountId = account.id
+                        message = null
+                        error = null
+                        scope.launch {
+                            when (val result = repository.changeRole(account.id, area)) {
+                                ManagedAccountActionResult.Success -> {
+                                    val roleCode = if (area == UserArea.TEACHING) "DOCENTE" else "RESPONSABLE"
+                                    accounts = accounts.map { current ->
+                                        if (current.id == account.id) current.copy(roles = roleCode) else current
+                                    }
+                                    message = "La cuenta de ${account.displayName} ahora es de tipo $roleName."
+                                    pendingRoleChange = null
+                                }
+                                ManagedAccountActionResult.Unauthorized -> error = "Tu sesión de administrador venció. Ingresa nuevamente."
+                                ManagedAccountActionResult.NotFound -> error = "La cuenta ya no existe. Actualiza la lista."
+                                is ManagedAccountActionResult.Failed -> error = "No se pudo cambiar el tipo de cuenta: ${result.reason}"
+                                ManagedAccountActionResult.NotConfigured,
+                                ManagedAccountActionResult.NetworkError -> error = "No se pudo cambiar el tipo de cuenta. Comprueba la conexión y la migración de Supabase."
+                            }
+                            busyAccountId = null
+                        }
+                    }
+                ) { Text(if (busyAccountId == account.id) "Guardando…" else "Confirmar cambio") }
+            },
+            dismissButton = {
+                TextButton(enabled = busyAccountId == null, onClick = { pendingRoleChange = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
     pendingDeletion?.let { account ->
         AlertDialog(
             onDismissRequest = { if (busyAccountId == null) pendingDeletion = null },
@@ -91,7 +133,7 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
                     onClick = {
                         busyAccountId = account.id
                         scope.launch {
-                            when (repository.deleteAccount(account.id)) {
+                            when (val result = repository.deleteAccount(account.id)) {
                                 ManagedAccountActionResult.Success -> {
                                     accounts = accounts.filterNot { it.id == account.id }
                                     message = "La cuenta de ${account.displayName} fue eliminada."
@@ -99,6 +141,7 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
                                 }
                                 ManagedAccountActionResult.Unauthorized -> error = "Tu sesión de administrador venció. Ingresa nuevamente."
                                 ManagedAccountActionResult.NotFound -> error = "La cuenta ya no existe. Actualiza la lista."
+                                is ManagedAccountActionResult.Failed -> error = "No se pudo eliminar la cuenta: ${result.reason}"
                                 ManagedAccountActionResult.NotConfigured,
                                 ManagedAccountActionResult.NetworkError -> error = "No se pudo eliminar la cuenta. Comprueba la conexión e inténtalo nuevamente."
                             }
@@ -143,7 +186,17 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
                         fontSize = 26.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
-                    TextButton(onClick = onSignOut) { Text("Salir") }
+                    androidx.compose.material3.Button(
+                        onClick = onSignOut,
+                        modifier = Modifier.widthIn(min = 140.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = KMatInk,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Cerrar sesión", fontWeight = FontWeight.Bold)
+                    }
                 }
                 Text(
                     "Administra las cuentas registradas. Puedes eliminarlas o enviar instrucciones para cambiar su contraseña.",
@@ -168,6 +221,11 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
                             account = account,
                             modifier = Modifier.width(cardWidth),
                             busy = busyAccountId != null,
+                            onChangeRole = { area ->
+                                error = null
+                                message = null
+                                pendingRoleChange = account to area
+                            },
                             onRequestPasswordReset = {
                                 busyAccountId = account.id
                                 message = null
@@ -175,6 +233,7 @@ fun AdministrationScreen(repository: ManagedAccountsRepository, onSignOut: () ->
                                 scope.launch {
                                     message = when (repository.requestPasswordReset(account.email)) {
                                         PasswordResetResult.Requested -> "Se enviaron instrucciones de cambio a ${account.email}."
+                                        PasswordResetResult.RateLimited -> "Supabase limitó temporalmente los correos de recuperación. Inténtalo más tarde."
                                         PasswordResetResult.NotConfigured -> "El servicio de correo no está configurado."
                                         PasswordResetResult.NetworkError -> "No se pudo enviar el correo de cambio de contraseña. Inténtalo nuevamente."
                                     }
@@ -205,6 +264,7 @@ private fun ManagedAccountCard(
     account: ManagedAccount,
     modifier: Modifier = Modifier,
     busy: Boolean,
+    onChangeRole: (UserArea) -> Unit,
     onRequestPasswordReset: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -255,8 +315,25 @@ private fun ManagedAccountCard(
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Rol", color = Color(0xFF52657A), fontSize = 12.sp)
-                Text(account.roles.ifBlank { "Sin rol" }, color = KMatInk, fontWeight = FontWeight.SemiBold)
+                Text(account.roles.split(",").joinToString { it.trim().toDisplayRole() }.ifBlank { "Sin rol" }, color = KMatInk, fontWeight = FontWeight.SemiBold)
                 Text("Estado: ${account.status}", color = Color(0xFF52657A), fontSize = 13.sp)
+            }
+
+            if ("ADMINISTRADOR" !in account.roles.split(",").map { it.trim() }) {
+                val currentRole = account.roles.split(",").map { it.trim() }.firstOrNull()
+                Text("Tipo de cuenta", color = Color(0xFF52657A), fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !busy && currentRole != "RESPONSABLE",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onChangeRole(UserArea.LEARNING) }
+                    ) { Text("Responsable") }
+                    OutlinedButton(
+                        enabled = !busy && currentRole != "DOCENTE",
+                        modifier = Modifier.weight(1f),
+                        onClick = { onChangeRole(UserArea.TEACHING) }
+                    ) { Text("Docente") }
+                }
             }
 
             androidx.compose.material3.Button(
@@ -264,13 +341,22 @@ private fun ManagedAccountCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onRequestPasswordReset
             ) { Text("Enviar enlace de cambio") }
-            OutlinedButton(
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onDelete,
-                border = BorderStroke(1.dp, Color(0xFF9B2525)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF9B2525))
-            ) { Text("Eliminar cuenta") }
+            if ("ADMINISTRADOR" !in account.roles.split(",").map { it.trim() }) {
+                OutlinedButton(
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onDelete,
+                    border = BorderStroke(1.dp, Color(0xFF9B2525)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF9B2525))
+                ) { Text("Eliminar cuenta") }
+            }
         }
     }
+}
+
+private fun String.toDisplayRole(): String = when (this) {
+    "DOCENTE" -> "Docente"
+    "RESPONSABLE" -> "Padre / responsable"
+    "ADMINISTRADOR" -> "Administrador"
+    else -> this
 }

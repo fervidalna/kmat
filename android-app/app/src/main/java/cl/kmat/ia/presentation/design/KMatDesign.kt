@@ -2,6 +2,10 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -21,15 +25,24 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.imageResource
 import cl.kmat.ia.R
 
 val KMatSkyDeep = Color(0xFFBCE8FF)
@@ -88,13 +101,39 @@ fun KMatMascot(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun KMatJumpingMascot(modifier: Modifier = Modifier) {
-    Image(
-        painter = painterResource(R.drawable.kmat_mascot_jumping),
-        contentDescription = "Mascota de K-Mat IA saltando",
-        modifier = modifier,
-        contentScale = ContentScale.Fit
-    )
+fun KMatJumpingMascot(modifier: Modifier = Modifier, isJumping: Boolean = false, useJumpSequence: Boolean = false) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(isJumping, useJumpSequence) {
+        if (isJumping && useJumpSequence) {
+            while (true) {
+                progress.snapTo(0f)
+                progress.animateTo(8f, tween(900, easing = LinearEasing))
+            }
+        } else {
+            progress.snapTo(0f)
+        }
+    }
+    if (!useJumpSequence) {
+        Image(
+            painter = painterResource(R.drawable.kmat_mascot_jumping),
+            contentDescription = "Perrito listo para saltar",
+            modifier = modifier,
+            contentScale = ContentScale.Fit
+        )
+    } else {
+        val sheet = ImageBitmap.imageResource(id = R.drawable.kmat_puppy_jump_clean)
+        val sourceWidth = sheet.width / 4
+        val sourceHeight = sheet.height / 2
+        val frame = progress.value.toInt().coerceIn(0, 7)
+        Canvas(modifier = modifier) {
+            drawImage(
+                image = sheet,
+                srcOffset = IntOffset((frame % 4) * sourceWidth, (frame / 4) * sourceHeight),
+                srcSize = IntSize(sourceWidth, sourceHeight),
+                dstSize = IntSize(size.width.toInt(), size.height.toInt())
+            )
+        }
+    }
 }
 
 @Composable

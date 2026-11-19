@@ -18,6 +18,34 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SessionCompletionAudioTest {
     @Test
+    fun bundledBetweenExerciseRecordingDecodesAndPlaysToCompletion() {
+        listOf(R.raw.practica_animo_gemini, R.raw.practica_animo_sigue, R.raw.practica_animo_excelente)
+            .forEach { assertRecordingPlaysToCompletion(it) }
+    }
+
+    private fun assertRecordingPlaysToCompletion(resource: Int) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val finished = CountDownLatch(1)
+        val failed = AtomicBoolean(false)
+        var player: MediaPlayer? = null
+        try {
+            instrumentation.runOnMainSync {
+                player = MediaPlayer.create(context, resource)
+                val recording = requireNotNull(player)
+                assertTrue(recording.duration in 500..5000)
+                recording.setOnErrorListener { _, _, _ -> failed.set(true); finished.countDown(); true }
+                recording.setOnCompletionListener { finished.countDown() }
+                recording.start()
+            }
+            assertTrue("Playback must finish", finished.await(10, TimeUnit.SECONDS))
+            assertFalse("Audio decoder must not fail", failed.get())
+        } finally {
+            instrumentation.runOnMainSync { player?.release() }
+        }
+    }
+
+    @Test
     fun bundledGreetingDecodesAndPlaysToCompletion() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val instrumentation = InstrumentationRegistry.getInstrumentation()

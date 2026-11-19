@@ -16,6 +16,7 @@ data class RegistrationUiState(
     val email: String = "",
     val password: String = "",
     val confirmPassword: String = "",
+    val accountArea: UserArea? = null,
     val passwordVisible: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -30,6 +31,11 @@ class RegistrationViewModel(private val signUp: SignUpUseCase) : ViewModel() {
     fun updateEmail(value: String) { uiState = uiState.copy(email = value, errorMessage = null) }
     fun updatePassword(value: String) { uiState = uiState.copy(password = value, errorMessage = null) }
     fun updateConfirmPassword(value: String) { uiState = uiState.copy(confirmPassword = value, errorMessage = null) }
+    fun selectAccountArea(value: UserArea) {
+        if (value == UserArea.LEARNING || value == UserArea.TEACHING) {
+            uiState = uiState.copy(accountArea = value, errorMessage = null)
+        }
+    }
     fun togglePasswordVisibility() { uiState = uiState.copy(passwordVisible = !uiState.passwordVisible) }
 
     fun register(onAuthenticated: (UserArea) -> Unit) {
@@ -39,6 +45,10 @@ class RegistrationViewModel(private val signUp: SignUpUseCase) : ViewModel() {
         when {
             name.isBlank() || email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank() -> {
                 uiState = state.copy(errorMessage = "Completa todos los campos.")
+                return
+            }
+            state.accountArea == null -> {
+                uiState = state.copy(errorMessage = "Selecciona si crearás una cuenta de responsable o docente.")
                 return
             }
             !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> {
@@ -57,11 +67,14 @@ class RegistrationViewModel(private val signUp: SignUpUseCase) : ViewModel() {
 
         uiState = state.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            val result = signUp(name, email, state.password)
+            val result = signUp(name, email, state.password, requireNotNull(state.accountArea))
             // Nunca se persiste ni mantiene la contraseña luego de enviarla.
             uiState = uiState.copy(isLoading = false, password = "", confirmPassword = "")
             when (result) {
                 is SignUpResult.Authenticated -> onAuthenticated(result.area)
+                is SignUpResult.Failed -> {
+                    uiState = uiState.copy(errorMessage = "No se pudo crear la cuenta: ${result.reason}")
+                }
                 SignUpResult.ConfirmationRequired -> {
                     uiState = uiState.copy(
                         confirmationMessage = "Revisa tu correo y confirma la cuenta antes de iniciar sesión."

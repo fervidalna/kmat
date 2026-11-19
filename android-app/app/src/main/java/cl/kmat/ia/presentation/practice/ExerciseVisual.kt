@@ -22,22 +22,51 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
 import cl.kmat.ia.presentation.design.KMatInk
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 private data class VisualGroup(val label: String, val symbol: String, val count: Int)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ExerciseVisual(spec: String, modifier: Modifier = Modifier) {
+internal fun ExerciseVisual(spec: String, modifier: Modifier = Modifier, compact: Boolean = false) {
     val visual = remember(spec) { runCatching { JSONObject(spec) }.getOrNull() } ?: return
+    // Measure the whole illustration before fitting it, so the last row counts
+    // toward its height even when the phone gives the illustration little room.
+    Layout(
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFFF1F8FF)),
+        content = { VisualContent(visual, compact) }
+    ) { measurables, constraints ->
+        val diagram = measurables.single().measure(Constraints.fixedWidth(320.dp.roundToPx()))
+        val width = constraints.maxWidth
+        val scale = minOf(width.toFloat() / diagram.width,
+            constraints.maxHeight.toFloat() / diagram.height.coerceAtLeast(1))
+        val height = (diagram.height * scale).roundToInt().coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            diagram.placeWithLayer(((width - diagram.width * scale) / 2).roundToInt(),
+                ((height - diagram.height * scale) / 2).roundToInt()) {
+                transformOrigin = TransformOrigin(0f, 0f)
+                scaleX = scale
+                scaleY = scale
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun VisualContent(visual: JSONObject, compact: Boolean) {
     Column(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color(0xFFF1F8FF)).padding(12.dp),
+        Modifier.fillMaxWidth().padding(if (compact) 6.dp else 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -84,7 +113,7 @@ internal fun ExerciseVisual(spec: String, modifier: Modifier = Modifier) {
                         val group = groups.getJSONObject(index)
                         val shape = group.optString("shape", "triangle")
                         repeat(group.optInt("count").coerceIn(1, 4)) {
-                            ShapeTile(shape)
+                            ShapeTile(shape, compact)
                         }
                     }
                 }
@@ -143,9 +172,9 @@ private fun ObjectGroup(symbol: String, label: String, count: Int, modifier: Mod
 }
 
 @Composable
-private fun ShapeTile(shape: String) {
+private fun ShapeTile(shape: String, compact: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Canvas(Modifier.size(62.dp)) {
+        Canvas(Modifier.size(if (compact) 46.dp else 62.dp)) {
             val sides = when (shape) { "triangle" -> 3; "square", "rectangle" -> 4; "pentagon" -> 5; else -> 6 }
             val centerX = size.width / 2f
             val centerY = size.height / 2f
@@ -177,14 +206,14 @@ private fun ShapeTile(shape: String) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MeasureBar(label: String, count: Int) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, color = KMatInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, Modifier.weight(1f), color = KMatInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.weight(2f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             repeat(count) {
-                Box(Modifier.size(width = 18.dp, height = 16.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF76C6EE)))
+                Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFF76C6EE)))
             }
         }
     }

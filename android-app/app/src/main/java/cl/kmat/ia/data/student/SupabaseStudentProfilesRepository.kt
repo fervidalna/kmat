@@ -9,6 +9,9 @@ import cl.kmat.ia.domain.model.DeleteStudentProfileResult
 import cl.kmat.ia.domain.model.StudentProfile
 import cl.kmat.ia.domain.model.StudentProfilesResult
 import cl.kmat.ia.domain.model.JoinTeachingGroupResult
+import cl.kmat.ia.domain.model.LeaveTeachingGroupResult
+import cl.kmat.ia.domain.model.StudentTeachingGroup
+import cl.kmat.ia.domain.model.StudentTeachingGroupsResult
 import cl.kmat.ia.domain.repository.AuthRepository
 import cl.kmat.ia.domain.repository.StudentProfilesRepository
 import kotlinx.coroutines.Dispatchers
@@ -23,10 +26,21 @@ class SupabaseStudentProfilesRepository(
     private val authRepository: AuthRepository,
     private val offlineDatabase: OfflineDatabase
 ) : StudentProfilesRepository {
+    override suspend fun cachedMine(): List<StudentProfile>? = withContext(Dispatchers.IO) {
+        val accountId = authRepository.storedUserIdOrNull() ?: return@withContext null
+        readCachedProfiles(accountId)
+    }
+
     override suspend fun listMine(): StudentProfilesResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext StudentProfilesResult.NotConfigured
+        val accountId = authRepository.storedUserIdOrNull()
         val token = authRepository.validAccessTokenOrNull()
-            ?: return@withContext StudentProfilesResult.Unauthorized
+            ?: run {
+                val currentAccountId = authRepository.storedUserIdOrNull()
+                val cached = currentAccountId?.let { readCachedProfiles(it) }
+                return@withContext if (cached != null) StudentProfilesResult.Success(cached)
+                    else StudentProfilesResult.Unauthorized
+            }
         try {
             val response = request("/rest/v1/rpc/listar_mis_estudiantes", JSONObject(), token)
             if (response.code !in 200..299) {
@@ -34,11 +48,22 @@ class SupabaseStudentProfilesRepository(
                 val code = runCatching { JSONObject(response.body).optString("code") }.getOrDefault("")
                 Log.w("StudentProfiles", "List request failed: HTTP ${response.code}, code=$code")
             }
-            decodeStudentProfilesResponse(response.code, response.body)
+            val result = decodeStudentProfilesResponse(response.code, response.body)
+            if (result is StudentProfilesResult.Success && accountId != null) {
+                cacheProfiles(accountId, result.profiles)
+            }
+            when (result) {
+                StudentProfilesResult.NetworkError, StudentProfilesResult.ServiceUnavailable -> {
+                    val cached = accountId?.let { readCachedProfiles(it) }
+                    if (cached != null) StudentProfilesResult.Success(cached) else result
+                }
+                else -> result
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            StudentProfilesResult.NetworkError
+            val cached = accountId?.let { readCachedProfiles(it) }
+            if (cached != null) StudentProfilesResult.Success(cached) else StudentProfilesResult.NetworkError
         }
     }
 
@@ -59,7 +84,13 @@ class SupabaseStudentProfilesRepository(
                 in 200..299 -> {
                     val rows = JSONArray(response.body)
                     if (rows.length() == 0) CreateStudentProfileResult.NetworkError
-                    else CreateStudentProfileResult.Success(rows.getJSONObject(0).toProfile())
+                    else {
+                        val profile = rows.getJSONObject(0).toProfile()
+                        authRepository.storedUserIdOrNull()?.let { accountId ->
+                            updateCachedProfiles(accountId) { cached -> (cached + profile).distinctBy { it.id } }
+                        }
+                        CreateStudentProfileResult.Success(profile)
+                    }
                 }
                 401, 403 -> CreateStudentProfileResult.Unauthorized
                 400, 409, 422 -> CreateStudentProfileResult.InvalidRequest
@@ -80,6 +111,9 @@ class SupabaseStudentProfilesRepository(
             )
             val result = decodeDeleteStudentProfileResponse(response.code, response.body)
             if (result == DeleteStudentProfileResult.Success) {
+                authRepository.storedUserIdOrNull()?.let { accountId ->
+                    updateCachedProfiles(accountId) { cached -> cached.filterNot { it.id == studentId } }
+                }
                 if (authRepository.activeStudentIdOrNull() == studentId) {
                     authRepository.clearActiveStudentId()
                 }
@@ -131,11 +165,111 @@ class SupabaseStudentProfilesRepository(
         }.getOrElse { JoinTeachingGroupResult.NetworkError }
     }
 
+    override suspend fun listJoinedTeachingGroups(studentId: String): StudentTeachingGroupsResult = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext StudentTeachingGroupsResult.NotConfigured
+        val token = authRepository.validAccessTokenOrNull() ?: return@withContext StudentTeachingGroupsResult.Unauthorized
+        runCatching {
+            val response = request(
+                "/rest/v1/rpc/responsable_listar_salas_estudiante",
+                JSONObject().put("p_id_estudiante", studentId), token
+            )
+            when {
+                response.code in 200..299 -> {
+                    val rows = JSONArray(response.body)
+                    StudentTeachingGroupsResult.Success(List(rows.length()) { index ->
+                        rows.getJSONObject(index).let { row ->
+                            StudentTeachingGroup(
+                                id = row.getString("id_grupo"),
+                                name = row.getString("nombre"),
+                                teacherNames = row.optString("docentes", "Docente").takeIf { it.isNotBlank() && it != "null" } ?: "Docente",
+                                joinedAt = row.optString("fecha_inicio")
+                            )
+                        }
+                    })
+                }
+                response.code == 401 || response.code == 403 -> StudentTeachingGroupsResult.Unauthorized
+                response.code == 404 -> StudentTeachingGroupsResult.NotConfigured
+                else -> StudentTeachingGroupsResult.NetworkError
+            }
+        }.getOrElse { StudentTeachingGroupsResult.NetworkError }
+    }
+
+    override suspend fun leaveTeachingGroup(studentId: String, groupId: String): LeaveTeachingGroupResult = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext LeaveTeachingGroupResult.NotConfigured
+        val token = authRepository.validAccessTokenOrNull() ?: return@withContext LeaveTeachingGroupResult.Unauthorized
+        runCatching {
+            val response = request(
+                "/rest/v1/rpc/responsable_salir_de_sala",
+                JSONObject().put("p_id_estudiante", studentId).put("p_id_grupo", groupId), token
+            )
+            when {
+                response.code in 200..299 && org.json.JSONTokener(response.body).nextValue() == true -> LeaveTeachingGroupResult.Success
+                response.code in 200..299 -> LeaveTeachingGroupResult.NotFound
+                response.code == 401 || response.code == 403 -> LeaveTeachingGroupResult.Unauthorized
+                response.code == 404 -> LeaveTeachingGroupResult.NotConfigured
+                else -> LeaveTeachingGroupResult.NetworkError
+            }
+        }.getOrElse { LeaveTeachingGroupResult.NetworkError }
+    }
+
     private fun JSONObject.toProfile() = StudentProfile(
         id = getString("id_estudiante"),
         name = getString("nombre_mostrado"),
         educationLevel = getString("codigo_nivel_educativo")
     )
+
+    private suspend fun readCachedProfiles(accountId: String): List<StudentProfile>? {
+        val cached = offlineDatabase.learningDao().getCachedStudentProfiles(accountId) ?: return null
+        return runCatching {
+            val rows = JSONArray(cached.profilesJson)
+            List(rows.length()) { index ->
+                rows.getJSONObject(index).let { row ->
+                    StudentProfile(
+                        id = row.getString("id"),
+                        name = row.getString("name"),
+                        educationLevel = row.getString("educationLevel")
+                    )
+                }
+            }
+        }.getOrNull()
+    }
+
+    private suspend fun writeCachedProfiles(accountId: String, profiles: List<StudentProfile>) {
+        val rows = JSONArray(profiles.map { profile ->
+            JSONObject()
+                .put("id", profile.id)
+                .put("name", profile.name)
+                .put("educationLevel", profile.educationLevel)
+        })
+        offlineDatabase.learningDao().saveCachedStudentProfiles(
+            cl.kmat.ia.data.local.CachedStudentProfilesEntity(
+                accountId = accountId,
+                profilesJson = rows.toString(),
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    private suspend fun cacheProfiles(accountId: String, profiles: List<StudentProfile>) {
+        try {
+            writeCachedProfiles(accountId, profiles)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w("StudentProfiles", "Could not update the local profile cache")
+        }
+    }
+
+    private suspend fun updateCachedProfiles(accountId: String, update: (List<StudentProfile>) -> List<StudentProfile>) {
+        try {
+            val cached = readCachedProfiles(accountId) ?: return
+            writeCachedProfiles(accountId, update(cached))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w("StudentProfiles", "Could not update the local profile cache")
+        }
+    }
 
     private fun request(path: String, body: JSONObject, token: String): HttpResponse {
         val url = URL(BuildConfig.SUPABASE_URL.trimEnd('/') + path)

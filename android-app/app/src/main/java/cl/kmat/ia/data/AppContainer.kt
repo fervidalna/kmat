@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import cl.kmat.ia.data.auth.SecureSessionStore
 import cl.kmat.ia.data.auth.SupabaseAuthRepository
+import cl.kmat.ia.data.gemini.GeminiPauseVoiceClient
 import cl.kmat.ia.data.admin.SupabaseManagedAccountsRepository
 import cl.kmat.ia.data.local.OfflineDatabase
 import cl.kmat.ia.data.local.OfflineDatabaseMigrations
@@ -33,6 +34,7 @@ import cl.kmat.ia.domain.usecase.ValidateExerciseAnswerUseCase
  */
 class AppContainer(applicationContext: Context) {
     val authRepository: AuthRepository = SupabaseAuthRepository(SecureSessionStore(applicationContext))
+    val geminiPauseVoiceClient = GeminiPauseVoiceClient(applicationContext)
     val signIn = SignInUseCase(authRepository)
     val signUp = SignUpUseCase(authRepository)
     val requestPasswordReset = RequestPasswordResetUseCase(authRepository)
@@ -43,7 +45,9 @@ class AppContainer(applicationContext: Context) {
     ).addMigrations(
         OfflineDatabaseMigrations.MIGRATION_1_2,
         OfflineDatabaseMigrations.MIGRATION_2_3,
-        OfflineDatabaseMigrations.MIGRATION_3_4
+        OfflineDatabaseMigrations.MIGRATION_3_4,
+        OfflineDatabaseMigrations.MIGRATION_4_5,
+        OfflineDatabaseMigrations.MIGRATION_5_6
     ).build()
     val studentProfilesRepository = SupabaseStudentProfilesRepository(authRepository, offlineDatabase)
     val managedAccountsRepository = SupabaseManagedAccountsRepository(authRepository)
@@ -58,7 +62,8 @@ class AppContainer(applicationContext: Context) {
     val learningSessionRepository: LearningSessionRepository = RoomLearningSessionRepository(
         offlineDatabase,
         applicationContext,
-        downloadRemoteProgress = { syncClient.downloadProgress() },
+        syncBeforeUse = { studentId -> syncCoordinator.syncPending(studentId) },
+        claimRemoteSession = syncClient::claimSession,
         downloadTeacherAssignments = { studentId -> syncClient.downloadTeacherAssignments(studentId) }
     )
     val getDailyOfflineExercise = GetDailyOfflineExerciseUseCase(learningSessionRepository)

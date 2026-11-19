@@ -111,7 +111,8 @@ class LoginViewModel(
             uiState = uiState.copy(
                 isResetLoading = false,
                 resetMessage = when (result) {
-                    PasswordResetResult.Requested -> "Si el correo está registrado, recibirás instrucciones para restablecer la contraseña."
+                    PasswordResetResult.Requested -> "Si el correo está registrado, recibirás instrucciones. Abre el enlace en este mismo teléfono donde solicitaste el cambio."
+                    PasswordResetResult.RateLimited -> "Supabase limitó temporalmente los correos de recuperación. Espera un minuto antes de volver a intentarlo; si ya recibiste varios correos de K-Mat hoy, prueba más tarde."
                     PasswordResetResult.NotConfigured -> "El acceso seguro aún no está configurado."
                     PasswordResetResult.NetworkError -> "No fue posible solicitar el restablecimiento. Inténtalo más tarde."
                 }

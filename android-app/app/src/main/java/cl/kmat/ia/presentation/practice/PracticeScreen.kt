@@ -13,27 +13,43 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +58,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.kmat.ia.KMatApplication
 import cl.kmat.ia.data.recognition.MlKitHandwritingRecognitionRepository
@@ -57,6 +76,7 @@ import cl.kmat.ia.presentation.design.KMatMascot
 import cl.kmat.ia.presentation.design.KMatOutline
 import cl.kmat.ia.presentation.design.KMatProgress
 import cl.kmat.ia.presentation.design.KMatSkyDeep
+import kotlinx.coroutines.launch
 
 @Composable
 fun PracticeScreen(
@@ -79,9 +99,21 @@ fun PracticeScreen(
         )
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val audio = remember(application) { PracticeEncouragementAudio(application) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val audioScope = rememberCoroutineScope()
+    DisposableEffect(audio, lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) audio.release()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); audio.release() }
+    }
     PracticeContent(
         state = state,
         diagnosticMode = state.isDiagnosticSession,
+        mascotSpeaking = audio.isPlaying,
+        onOpenExplanation = audio::release,
         onCountSlotSelect = viewModel::selectCountAnswer,
         onCountSlotDone = viewModel::confirmCountAnswer,
         onStrokeStart = viewModel::startStroke,
@@ -97,7 +129,12 @@ fun PracticeScreen(
         onSubmit = {
             viewModel.submitAnswer { result ->
                 when (result) {
-                    PracticeAnswerResult.NextExercise -> Unit
+                    PracticeAnswerResult.NextExercise -> if (!state.isDiagnosticSession) {
+                        audioScope.launch {
+                            withFrameNanos { }
+                            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) audio.play()
+                        }
+                    }
                     is PracticeAnswerResult.SessionComplete -> {
                         if (result.diagnosticReport != null) onDiagnosticComplete(result.outcomes, result.diagnosticReport)
                         else onComplete(result.outcomes)
@@ -126,14 +163,43 @@ internal fun PracticeContent(
     onSubmit: () -> Unit,
     onActiveBreak: () -> Unit,
     onExit: () -> Unit,
+    onOpenExplanation: () -> Unit = {},
+    mascotSpeaking: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val exercise = state.exercise
+    val exampleKind = if (diagnosticMode || exercise == null) null else when {
+        exercise.contentCode == "TRAZADO_NUMEROS" -> "TRAZADO_NUMEROS"
+        exercise.contentCode == "ADICION" || exercise.id.startsWith("offline-sum-") -> "SUMA"
+        exercise.contentCode == "CONTEO" || exercise.id.startsWith("offline-count-") -> "CONTEO"
+        exercise.axis in setOf("PATRONES_ALGEBRA", "GEOMETRIA", "MEDICION", "DATOS_PROBABILIDAD") -> exercise.axis
+        else -> null
+    }
+    val hasExplanation = exampleKind != null
+    var explanationOpen by remember(state.exercise?.id, diagnosticMode) { mutableStateOf(false) }
+    if (hasExplanation && explanationOpen) {
+        if (exampleKind == "TRAZADO_NUMEROS") {
+            NumberTraceExampleScreen(
+                number = exercise?.expectedAnswer?.toIntOrNull() ?: 1,
+                onBack = { explanationOpen = false }
+            )
+        } else if (exampleKind == "SUMA") {
+            AdditionExplanationScreen(useAlternativeExample = exercise?.expectedAnswer?.trim() == "5", onBack = { explanationOpen = false })
+        } else if (exampleKind == "CONTEO" && exercise?.id != "offline-count-stars-5" &&
+            !exercise?.visualSpec.orEmpty().contains("\"OBJECTS\"")) {
+            CountingSequenceScreen(exercise = requireNotNull(exercise), onBack = { explanationOpen = false })
+        } else {
+            SubjectExplanationScreen(kind = requireNotNull(exampleKind), expectedAnswer = exercise?.expectedAnswer.orEmpty(), onBack = { explanationOpen = false })
+        }
+        return
+    }
     KMatBackground {
         Box(modifier.fillMaxSize().safeDrawingPadding()) {
-            val needsPreparation = !state.isRecognizerStatusKnown || !state.isRecognizerReady
+            val isTraceExercise = state.exercise?.contentCode == "TRAZADO_NUMEROS"
+            val needsPreparation = !isTraceExercise && (!state.isRecognizerStatusKnown || !state.isRecognizerReady)
             if (state.loadError != null) {
                 PracticeLoadError(state.loadError, onRetryLoad, onExit)
-            } else if (state.isLoading || !state.isRecognizerStatusKnown) {
+            } else if (state.isLoading || (!isTraceExercise && !state.isRecognizerStatusKnown)) {
                 PracticeLoadingScreen()
             } else if (needsPreparation) {
                 RecognizerPreparationScreen(
@@ -144,12 +210,22 @@ internal fun PracticeContent(
             } else {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val sideBySide = maxWidth >= 480.dp && maxWidth > maxHeight
-                    val compact = maxHeight < 650.dp
+                    val mobile = minOf(maxWidth, maxHeight) < 600.dp
+                    val compact = mobile || maxHeight < 650.dp
                     val tablet = maxWidth >= 840.dp
                     val isCountExercise = state.exercise?.id?.startsWith("offline-count-") == true
+                    val isTraceExercise = state.exercise?.contentCode == "TRAZADO_NUMEROS"
                     val isEnteringCountAnswer = isCountExercise && state.activeCountAnswerIndex != null
+                    val hasAnswerArea = !isCountExercise || isEnteringCountAnswer
+                    val hasVisual = !state.exercise?.visualSpec.isNullOrBlank()
+                    val phoneQuestionHeight = if (hasVisual) {
+                        (maxHeight * 0.34f).coerceIn(if (isCountExercise) 270.dp else 210.dp, 300.dp)
+                    } else (maxHeight * 0.27f).coerceIn(140.dp, 210.dp)
+                    val phoneAnswerHeight = (maxHeight - phoneQuestionHeight - 160.dp).coerceAtLeast(240.dp)
+                    val phoneLandscapeHeight = (maxHeight - 140.dp).coerceAtLeast(if (hasVisual && isCountExercise) 270.dp else 220.dp)
                     Column(
-                        Modifier.fillMaxSize().padding(horizontal = if (tablet) 24.dp else 12.dp, vertical = 8.dp),
+                        Modifier.fillMaxSize()
+                            .padding(horizontal = if (tablet) 24.dp else 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                 PracticeHeader(
@@ -160,20 +236,40 @@ internal fun PracticeContent(
                     onActiveBreak = onActiveBreak,
                     onExit = onExit
                 )
+                Column(
+                    Modifier.fillMaxWidth().weight(1f)
+                        .then(if (mobile) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 if (sideBySide) {
-                    Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        ExercisePrompt(state, compact, onCountSlotSelect, Modifier.weight(if (isCountExercise && !isEnteringCountAnswer) 1f else 0.36f).fillMaxHeight())
+                    Row(
+                        Modifier.fillMaxWidth().then(if (mobile) Modifier.height(phoneLandscapeHeight) else Modifier.weight(1f)),
+                        horizontalArrangement = Arrangement.spacedBy(if (mobile) 10.dp else 20.dp)
+                    ) {
+                        ExercisePromptWithMascot(
+                            state, compact, mobile, onCountSlotSelect, !diagnosticMode, mascotSpeaking, true,
+                            if (hasExplanation) { { onOpenExplanation(); explanationOpen = true } } else null,
+                            Modifier.weight(if (isCountExercise && !isEnteringCountAnswer) 1f else 0.36f).fillMaxHeight()
+                        )
                         if (!isCountExercise || isEnteringCountAnswer) AnswerArea(
                             state, onStrokeStart, onStrokePoint, onStrokeEnd, onWritingAreaChanged,
                             onPrepare, Modifier.weight(0.64f).fillMaxHeight(), compact = compact
                         )
                     }
                 } else {
-                    ExercisePrompt(state, compact, onCountSlotSelect, Modifier.fillMaxWidth())
+                    val promptModifier = if (mobile) {
+                        Modifier.fillMaxWidth().height(if (hasAnswerArea) phoneQuestionHeight else phoneQuestionHeight.coerceAtLeast(230.dp))
+                    } else Modifier.fillMaxWidth()
+                    ExercisePromptWithMascot(
+                        state, compact, mobile, onCountSlotSelect, !diagnosticMode, mascotSpeaking, false,
+                        if (hasExplanation) { { onOpenExplanation(); explanationOpen = true } } else null,
+                        promptModifier
+                    )
                     if (!isCountExercise || isEnteringCountAnswer) AnswerArea(
                         state, onStrokeStart, onStrokePoint, onStrokeEnd, onWritingAreaChanged,
-                        onPrepare, Modifier.fillMaxWidth().weight(1f)
+                        onPrepare, Modifier.fillMaxWidth().then(if (mobile) Modifier.height(phoneAnswerHeight) else Modifier.weight(1f)), compact = compact
                     )
+                }
                 }
                 // Reserve the actions' height; the canvas takes the remaining space.
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -181,7 +277,7 @@ internal fun PracticeContent(
                         onClick = onClear,
                         enabled = !state.isSaving && !state.answerSaved && !state.isDrawing &&
                             (!isCountExercise || isEnteringCountAnswer || state.countAnswerParts.any { it.isNotBlank() }),
-                        modifier = Modifier.weight(1f).height(56.dp).testTag("clear-answer"),
+                        modifier = Modifier.weight(1f).height(if (mobile) 50.dp else 56.dp).testTag("clear-answer"),
                         shape = RoundedCornerShape(24.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -195,9 +291,10 @@ internal fun PracticeContent(
                         enabled = !state.isLoading && (if (isEnteringCountAnswer) {
                             state.isRecognizerReady && state.answer.isNotBlank() && state.strokes.isNotEmpty()
                         } else if (isCountExercise) state.countAnswerParts.all { it.isNotBlank() }
-                        else state.isRecognizerReady && state.strokes.isNotEmpty()) &&
+                        else (isTraceExercise || state.isRecognizerReady) && state.strokes.isNotEmpty() &&
+                            (!isTraceExercise || state.answer.isNotBlank())) &&
                             !state.isSaving && !state.isDrawing,
-                        modifier = Modifier.weight(1f).height(56.dp).testTag("check-answer"),
+                        modifier = Modifier.weight(1f).height(if (mobile) 50.dp else 56.dp).testTag("check-answer"),
                         shape = RoundedCornerShape(24.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = KMatGreen, contentColor = Color.White)
@@ -217,6 +314,49 @@ internal fun PracticeContent(
         }
     }
 }
+}
+
+@Composable
+private fun ExercisePromptWithMascot(
+    state: PracticeUiState,
+    compact: Boolean,
+    mobile: Boolean,
+    onCountSlotSelect: (Int) -> Unit,
+    showMascot: Boolean,
+    mascotSpeaking: Boolean,
+    sideBySide: Boolean,
+    onExplanation: (() -> Unit)?,
+    modifier: Modifier
+) {
+    if (!showMascot) {
+        ExercisePrompt(state, compact, mobile, sideBySide || mobile, onCountSlotSelect, modifier)
+        return
+    }
+    Column(modifier) {
+        Box(Modifier.fillMaxWidth().height(if (mobile) 48.dp else if (compact) 168.dp else 224.dp)) {
+            TalkingPracticePuppy(
+                mascotSpeaking,
+                Modifier.align(if (sideBySide) Alignment.Center else Alignment.CenterEnd)
+                    .width(if (mobile) 104.dp else if (sideBySide && !compact) 336.dp else 272.dp)
+                    .fillMaxHeight()
+            )
+            if (onExplanation != null) {
+                IconButton(
+                    onClick = onExplanation,
+                    modifier = Modifier.align(Alignment.TopStart).size(48.dp)
+                        .background(Color.White, CircleShape).border(2.dp, KMatInk, CircleShape)
+                        .testTag("exercise-explanation")
+                        .semantics { contentDescription = "Ver explicación del ejercicio" }
+                ) {
+                    Text("?", color = KMatInk, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                }
+            }
+        }
+        ExercisePrompt(
+            state, compact, mobile, sideBySide || mobile, onCountSlotSelect,
+            if (sideBySide || mobile) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth()
+        )
+    }
 }
 
 @Composable
@@ -309,9 +449,13 @@ private fun AnswerArea(
     modifier: Modifier,
     compact: Boolean = false
 ) {
+    val isTraceExercise = state.exercise?.contentCode == "TRAZADO_NUMEROS"
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (!compact) {
             Text("Escribe con tu dedo o lápiz", color = KMatInk, fontSize = 16.sp, maxLines = 1)
+        }
+        if (isTraceExercise && !compact) {
+            Text("Empieza en el punto amarillo y sigue los puntos en orden", color = KMatInk, fontSize = 14.sp, maxLines = 1)
         }
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             HandwritingPad(
@@ -320,9 +464,10 @@ private fun AnswerArea(
                 onStrokePoint = onStrokePoint,
                 onStrokeEnd = onStrokeEnd,
                 onWritingAreaChanged = onWritingAreaChanged,
+                traceNumber = state.exercise?.expectedAnswer?.toIntOrNull().takeIf { isTraceExercise },
                 modifier = Modifier.fillMaxSize().testTag("handwriting-pad")
             )
-            if (state.strokes.isEmpty()) {
+            if (state.strokes.isEmpty() && !isTraceExercise) {
                 Text("Escribe aquí", color = KMatInk.copy(alpha = 0.35f), fontSize = 26.sp)
             }
         }
@@ -330,6 +475,8 @@ private fun AnswerArea(
         Row(Modifier.fillMaxWidth().height(if (compact) 36.dp else 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = when {
+                    isTraceExercise && state.recognitionMessage != null -> state.recognitionMessage.orEmpty()
+                    isTraceExercise -> "En orden: ${(state.traceCoverage * 100).toInt()}% · Sobre la guía: ${(state.traceAdherence * 100).toInt()}%"
                     state.isPreparingRecognizer -> "Preparando escritura… La primera vez necesita internet."
                     !state.isRecognizerReady -> "Conéctate a internet y toca Reintentar."
                     state.isDrawing -> "Termina de escribir tu número."
@@ -347,7 +494,7 @@ private fun AnswerArea(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            if (!state.isRecognizerReady && !state.isPreparingRecognizer) {
+            if (!isTraceExercise && !state.isRecognizerReady && !state.isPreparingRecognizer) {
                 OutlinedButton(
                     onClick = onPrepare,
                     shape = RoundedCornerShape(20.dp),
@@ -367,20 +514,39 @@ private fun AnswerArea(
 private fun ExercisePrompt(
     state: PracticeUiState,
     compact: Boolean,
+    mobile: Boolean,
+    boundedHeight: Boolean,
     onCountSlotSelect: (Int) -> Unit,
     modifier: Modifier
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center) {
-        Text(state.exercise?.content ?: "Ejercicio", color = KMatInk, fontSize = if (compact) 20.sp else 26.sp,
+        Text(state.exercise?.content ?: "Ejercicio", color = KMatInk, fontSize = if (mobile) 16.sp else if (compact) 20.sp else 26.sp,
             fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        state.exercise?.visualSpec?.takeIf(String::isNotBlank)?.let { ExerciseVisual(it) }
+        state.exercise?.visualSpec?.takeIf(String::isNotBlank)?.let {
+            ExerciseVisual(
+                it,
+                modifier = if (boundedHeight) Modifier.weight(0.9f) else Modifier.heightIn(max = 160.dp),
+                compact = mobile
+            )
+        }
         if (state.exercise?.id?.startsWith("offline-count-") == true) {
-            val sequenceParts = state.exercise.statement.substringAfter(": ").split("__")
+            val statement = state.exercise.statement
+            val instruction = statement.substringBefore(": ").trim()
+            if (instruction.isNotBlank()) {
+                Text(
+                    instruction,
+                    color = KMatInk,
+                    fontSize = if (mobile) 14.sp else if (compact) 16.sp else 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
+            val sequenceParts = statement.substringAfter(": ", statement).split("__")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 sequenceParts.forEachIndexed { index, sequenceText ->
                     if (sequenceText.isNotEmpty()) {
-                        Text(sequenceText, color = KMatInk, fontSize = if (compact) 20.sp else 28.sp,
+                        Text(sequenceText, color = KMatInk, fontSize = if (mobile) 18.sp else if (compact) 20.sp else 28.sp,
                             fontWeight = FontWeight.ExtraBold)
                     }
                     if (index < sequenceParts.lastIndex) {
@@ -396,7 +562,7 @@ private fun ExercisePrompt(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Tu respuesta:", color = KMatInk, fontSize = if (compact) 17.sp else 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Tu respuesta:", color = KMatInk, fontSize = if (mobile) 15.sp else if (compact) 17.sp else 20.sp, fontWeight = FontWeight.Bold)
                     CountAnswerSlot(
                         value = state.countAnswerParts.firstOrNull().orEmpty(),
                         isActive = state.activeCountAnswerIndex == 0
@@ -404,9 +570,24 @@ private fun ExercisePrompt(
                 }
             }
         } else {
-            Text(state.exercise?.statement ?: "Preparando…", color = KMatInk,
-                fontSize = if (compact) 32.sp else 42.sp, fontWeight = FontWeight.ExtraBold,
-                textAlign = TextAlign.Center, lineHeight = if (compact) 38.sp else 50.sp)
+            val promptShape = RoundedCornerShape(24.dp)
+            val questionModifier = Modifier.fillMaxWidth()
+                .then(if (boundedHeight) Modifier.weight(1f) else Modifier)
+                    .shadow(8.dp, promptShape)
+                    .clip(promptShape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFFFFFFFF), Color(0xFFEAF6FF))
+                        )
+                    )
+                    .border(1.dp, Color(0xFFB8DDF6), promptShape)
+                    .padding(horizontal = if (mobile) 10.dp else 18.dp, vertical = if (mobile) 4.dp else 10.dp)
+            AutoFitQuestionText(
+                text = state.exercise?.statement ?: "Preparando...",
+                modifier = questionModifier,
+                maximumFontSize = if (mobile) 25.sp else if (compact) 32.sp else 42.sp,
+                minimumFontSize = if (mobile) 13.sp else 16.sp
+            )
         }
     }
 }

@@ -10,7 +10,9 @@ class AdaptivePracticeAssigner {
         bank: List<Exercise>,
         diagnostic: DiagnosticReport,
         previousPractice: List<ExercisePerformance>,
-        count: Int = SESSION_SIZE
+        count: Int = SESSION_SIZE,
+        previouslyAnswered: Set<String> = emptySet(),
+        masteryByAxis: Map<String, SubjectMastery> = emptyMap()
     ): List<Exercise> {
         if (bank.isEmpty() || count <= 0) return emptyList()
         val seenRecently = previousPractice.map { it.exerciseId }.toSet()
@@ -23,9 +25,11 @@ class AdaptivePracticeAssigner {
                 if (axisBank.isEmpty() || (useCounts[axis] ?: 0) >= MAX_PER_AXIS_PER_SESSION) return@mapNotNull null
                 val result = diagnostic.axes.firstOrNull { it.axis == axis }
                 val recent = previousPractice.filter { it.axis == axis }
-                val targetDifficulty = targetDifficulty(result?.level ?: 2, recent)
-                val unseen = axisBank.filter { it.id !in seenRecently }
-                val pool = if (unseen.isNotEmpty()) unseen else axisBank
+                val targetDifficulty = masteryByAxis[axis]?.let { it.currentLevel - 1 }
+                    ?: targetDifficulty(result?.level ?: 2, recent)
+                val unseen = axisBank.filter { it.id !in previouslyAnswered && it.id !in seenRecently }
+                val notRecent = axisBank.filter { it.id !in seenRecently }
+                val pool = unseen.ifEmpty { notRecent.ifEmpty { axisBank } }
                 val closest = pool.minOf { kotlin.math.abs(it.difficulty - targetDifficulty) }
                 val exercise = pool.filter { kotlin.math.abs(it.difficulty - targetDifficulty) == closest }.random()
                 AxisCandidate(axis, exercise, weight(result?.level ?: 2, recent))

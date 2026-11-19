@@ -1,9 +1,11 @@
 package cl.kmat.ia.presentation.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,10 +16,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +35,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.kmat.ia.KMatApplication
 import cl.kmat.ia.domain.model.UserArea
@@ -47,6 +52,14 @@ fun RegistrationScreen(onAuthenticated: (UserArea) -> Unit, onBack: () -> Unit) 
         factory = remember(application) { RegistrationViewModelFactory(application.container.signUp) }
     )
     val state = viewModel.uiState
+    val context = LocalContext.current
+
+    LaunchedEffect(state.confirmationMessage) {
+        state.confirmationMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            onBack()
+        }
+    }
 
     KMatBackground {
         Box(
@@ -66,10 +79,33 @@ fun RegistrationScreen(onAuthenticated: (UserArea) -> Unit, onBack: () -> Unit) 
                 KMatLogo(compact = true)
                 Text("Crear cuenta", color = KMatInk, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
                 Text(
-                    "Registra una cuenta de responsable para acompañar el aprendizaje.",
+                    "Crea una cuenta como padre o responsable, o como docente. El alumno usa un perfil creado por su adulto.",
                     color = KMatInk,
                     textAlign = TextAlign.Center
                 )
+                Text("Tipo de cuenta", color = KMatInk, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val parentSelected = state.accountArea == UserArea.LEARNING
+                    val teacherSelected = state.accountArea == UserArea.TEACHING
+                    OutlinedButton(
+                        onClick = { viewModel.selectAccountArea(UserArea.LEARNING) },
+                        enabled = !state.isLoading,
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(2.dp, if (parentSelected) KMatInk else Color(0xFFA9D7F2)),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (parentSelected) Color(0xFFE5F3FF) else Color.White
+                        )
+                    ) { Text(if (parentSelected) "✓ Padre / responsable" else "Padre / responsable", color = KMatInk) }
+                    OutlinedButton(
+                        onClick = { viewModel.selectAccountArea(UserArea.TEACHING) },
+                        enabled = !state.isLoading,
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(2.dp, if (teacherSelected) KMatInk else Color(0xFFA9D7F2)),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (teacherSelected) Color(0xFFE5F3FF) else Color.White
+                        )
+                    ) { Text(if (teacherSelected) "✓ Docente" else "Docente", color = KMatInk) }
+                }
                 OutlinedTextField(
                     value = state.displayName,
                     onValueChange = viewModel::updateDisplayName,
@@ -111,7 +147,16 @@ fun RegistrationScreen(onAuthenticated: (UserArea) -> Unit, onBack: () -> Unit) 
                 }
                 KMatPrimaryButton(
                     text = if (state.isLoading) "Creando cuenta…" else "Crear cuenta",
-                    onClick = { viewModel.register(onAuthenticated) },
+                    onClick = {
+                        viewModel.register { area ->
+                            Toast.makeText(
+                                context,
+                                "Cuenta creada. Ya puedes iniciar sesión.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            onAuthenticated(area)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !state.isLoading
                 )

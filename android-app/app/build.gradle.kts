@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val appVersionName = "1.1"
+val appVersionName = "1.0"
 
 android {
     namespace = "cl.kmat.ia"
@@ -32,7 +32,7 @@ android {
         applicationId = "cl.kmat.ia"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
+        versionCode = 9
         versionName = appVersionName
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")

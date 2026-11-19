@@ -3,8 +3,11 @@ package cl.kmat.ia.practice
 import android.graphics.Bitmap
 import android.content.res.Configuration
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -18,13 +21,17 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import cl.kmat.ia.MainActivity
 import cl.kmat.ia.presentation.design.KMatTheme
 import cl.kmat.ia.presentation.practice.PracticeScreen
+import cl.kmat.ia.presentation.practice.AutoFitQuestionText
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +40,39 @@ import org.junit.runner.RunWith
 class PracticeScreenTest {
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun longAndShortQuestionsFitTheirAssignedCards() {
+        val shortLayout = AtomicReference<Pair<Float, Boolean>?>(null)
+        val longLayout = AtomicReference<Pair<Float, Boolean>?>(null)
+        val longQuestion = "A ribbon is 5 cm and another is 8 cm. How many centimeters longer is the second ribbon?"
+
+        compose.activity.setContent {
+            KMatTheme {
+                Column {
+                    AutoFitQuestionText(
+                        text = "How many sides?",
+                        modifier = Modifier.size(width = 280.dp, height = 170.dp),
+                        maximumFontSize = 42.sp,
+                        minimumFontSize = 14.sp,
+                        onLayout = { fontSize, fits -> shortLayout.set(fontSize.value to fits) }
+                    )
+                    AutoFitQuestionText(
+                        text = longQuestion,
+                        modifier = Modifier.size(width = 280.dp, height = 170.dp),
+                        maximumFontSize = 42.sp,
+                        minimumFontSize = 14.sp,
+                        onLayout = { fontSize, fits -> longLayout.set(fontSize.value to fits) }
+                    )
+                }
+            }
+        }
+
+        compose.waitUntil(10_000) {
+            shortLayout.get()?.second == true && longLayout.get()?.second == true
+        }
+        assertTrue("Short text should keep a larger font", shortLayout.get()!!.first > longLayout.get()!!.first)
+    }
 
     @Test
     fun writesTwoClearsAndChecksWithoutScrolling() {

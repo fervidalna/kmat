@@ -7,7 +7,7 @@ const corsHeaders = {
 
 type SyncEvent = {
   id: string;
-  operation: "SESSION_STARTED" | "SESSION_COMPLETED" | "ATTEMPT_RECORDED";
+  operation: "SESSION_STARTED" | "SESSION_COMPLETED" | "ATTEMPT_RECORDED" | "SESSION_PLANNED" | "DIAGNOSTIC_RECORDED";
   payload: Record<string, unknown>;
 };
 
@@ -32,9 +32,13 @@ Deno.serve(async (request) => {
     return new Response(JSON.stringify({ error: "Sesión inválida" }), { status: 401, headers: corsHeaders });
   }
 
-  const body = await request.json() as { action?: string; student_local_id?: string; events?: SyncEvent[] };
+  const body = await request.json() as {
+    action?: string; student_local_id?: string; after?: string; events?: SyncEvent[];
+    session_id?: string; session_type?: string; started_at?: number;
+  };
   const admin = createClient(supabaseUrl, serviceRoleKey);
-  const { data: relations, error: relationError } = await admin
+  // Read the caller's own links under RLS; this does not require service-role table grants.
+  const { data: relations, error: relationError } = await authenticatedClient
     .from("responsable_estudiante")
     .select("id_estudiante")
     .eq("id_responsable", user.id)
@@ -42,14 +46,42 @@ Deno.serve(async (request) => {
   if (relationError) return new Response(JSON.stringify({ error: relationError.message }), { status: 422, headers: corsHeaders });
   const studentIds = (relations ?? []).map((relation) => relation.id_estudiante as string);
 
+  if (body.action === "claim_learning_session") {
+    const { data, error } = await authenticatedClient.rpc("retomar_sesion_aprendizaje", {
+      p_student_id: body.student_local_id, p_session_type: body.session_type,
+      p_session_id: body.session_id, p_started_at: body.started_at,
+    });
+    return new Response(JSON.stringify(error ? { error: error.message } : data), {
+      status: error ? 422 : 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (body.action === "sync_profiles") {
+    return new Response(JSON.stringify({ student_ids: studentIds }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (body.action === "download_learning_state") {
+    const { data, error } = await authenticatedClient.rpc("descargar_aprendizaje", {
+      p_student_id: body.student_local_id,
+      p_after: body.after ?? null,
+    });
+    return new Response(JSON.stringify(error ? { error: error.message } : data), {
+      status: error ? 422 : 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   if (body.action === "download_progress") {
-    if (studentIds.length === 0) {
+    if (!body.student_local_id || !studentIds.includes(body.student_local_id)) {
       return new Response(JSON.stringify({ progress: [] }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const { data, error } = await admin
       .from("asignacion_ejercicio")
       .select("id_estudiante,ejercicio_version!inner(tipo_ejercicio),sesion_aprendizaje!inner(inicio_en),intento_ejercicio(es_correcta,tiempo_respuesta_ms,respondido_en,respuesta_final)")
-      .in("id_estudiante", studentIds)
+      .eq("id_estudiante", body.student_local_id)
       .not("id_sesion", "is", null);
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 422, headers: corsHeaders });
 
@@ -79,31 +111,9 @@ Deno.serve(async (request) => {
     if (!studentIds.includes(studentId)) {
       return new Response(JSON.stringify({ error: "El perfil no pertenece a esta cuenta" }), { status: 403, headers: corsHeaders });
     }
-    const { data, error } = await admin
-      .from("asignacion_ejercicio")
-      .select("id_asignacion,id_ejercicio_version,ejercicio_version!inner(id_ejercicio_version,enunciado,solucion,dificultad,contenido!inner(nombre))")
-      .eq("id_estudiante", studentId)
-      .eq("origen", "DOCENTE")
-      .in("estado", ["PENDIENTE", "EN_CURSO"])
-      .order("orden_cola", { ascending: true, nullsFirst: true });
+    const { data, error } = await authenticatedClient.rpc("responsable_refuerzos_pendientes", { p_estudiante: studentId });
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 422, headers: corsHeaders });
-    const assignments = (data ?? []).map((assignment) => {
-      const exercise = assignment.ejercicio_version as unknown as {
-        id_ejercicio_version: string;
-        enunciado: string;
-        solucion: unknown;
-        dificultad: number;
-        contenido: { nombre: string };
-      };
-      return {
-        assignment_id: assignment.id_asignacion,
-        exercise_version_id: exercise.id_ejercicio_version,
-        activity: exercise.contenido.nombre,
-        statement: exercise.enunciado,
-        solution: exercise.solucion,
-        difficulty: exercise.dificultad,
-      };
-    });
+    const assignments = data ?? [];
     return new Response(JSON.stringify({ assignments }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
@@ -112,95 +122,15 @@ Deno.serve(async (request) => {
     return new Response(JSON.stringify({ error: "Lote de sincronización inválido" }), { status: 400, headers: corsHeaders });
   }
 
-  for (const event of events) {
-    const requestedStudentId = typeof event.payload.student_local_id === "string"
-      ? event.payload.student_local_id
-      : "";
-    if (!studentIds.includes(requestedStudentId)) {
-      return new Response(JSON.stringify({ error: "El evento no corresponde a un perfil vinculado a esta cuenta" }), { status: 403, headers: corsHeaders });
-    }
-    const studentId = requestedStudentId;
-
-    if (event.operation === "SESSION_STARTED") {
-      const { error } = await admin.from("sesion_aprendizaje").upsert({
-        id_sesion: event.payload.local_session_id,
-        id_estudiante: studentId,
-        tipo_sesion: event.payload.session_type === "DIAGNOSTICO" ? "DIAGNOSTICO" : "PRACTICA",
-        estado: "EN_CURSO",
-        inicio_en: new Date(Number(event.payload.started_at)).toISOString(),
-      }, { onConflict: "id_sesion" });
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 422, headers: corsHeaders });
-    }
-
-    if (event.operation === "SESSION_COMPLETED") {
-      const { error } = await admin.from("sesion_aprendizaje").update({
-        estado: "COMPLETADA",
-        fin_en: new Date(Number(event.payload.ended_at)).toISOString(),
-      })
-        .eq("id_sesion", event.payload.local_session_id)
-        .eq("id_estudiante", studentId);
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 422, headers: corsHeaders });
-    }
-
-    if (event.operation === "ATTEMPT_RECORDED") {
-      const attemptId = String(event.payload.local_attempt_id);
-      const teacherAssignmentId = typeof event.payload.teacher_assignment_id === "string"
-        ? event.payload.teacher_assignment_id
-        : "";
-      const assignmentId = teacherAssignmentId || attemptId;
-      const exerciseVersionId = String(event.payload.exercise_version_remote_id);
-      const respondedAt = new Date(Number(event.payload.recorded_at)).toISOString();
-      let assignmentData: { id_asignacion: string } | null = null;
-      let assignmentError: { message: string } | null = null;
-      if (teacherAssignmentId) {
-        const result = await admin.from("asignacion_ejercicio").update({
-          id_sesion: event.payload.local_session_id,
-          estado: "COMPLETADA",
-          iniciado_en: respondedAt,
-          completado_en: respondedAt,
-        }).eq("id_asignacion", assignmentId).eq("id_estudiante", studentId).eq("origen", "DOCENTE")
-          .select("id_asignacion").maybeSingle()
-        assignmentData = result.data;
-        assignmentError = result.error;
-      } else {
-        const result = await admin.from("asignacion_ejercicio").upsert({
-          id_asignacion: assignmentId,
-          id_estudiante: studentId,
-          id_ejercicio_version: exerciseVersionId,
-          id_sesion: event.payload.local_session_id,
-          origen: "MOTOR",
-          estado: "COMPLETADA",
-          asignado_en: respondedAt,
-          iniciado_en: respondedAt,
-          completado_en: respondedAt,
-        }, { onConflict: "id_asignacion" });
-        assignmentError = result.error;
-      }
-      if (assignmentError) return new Response(JSON.stringify({ error: assignmentError.message }), { status: 422, headers: corsHeaders });
-      if (teacherAssignmentId && !assignmentData) {
-        return new Response(JSON.stringify({ error: "La actividad asignada ya no está disponible" }), { status: 409, headers: corsHeaders });
-      }
-
-      const { error: attemptError } = await admin.from("intento_ejercicio").upsert({
-        id_intento: attemptId,
-        id_asignacion: assignmentId,
-        numero_intento: Number(event.payload.attempt_number),
-        respuesta_reconocida: event.payload.answer,
-        respuesta_final: {
-          answer: event.payload.answer,
-          strokes: event.payload.strokes,
-          exercise_local_id: event.payload.exercise_local_id,
-        },
-        es_correcta: Boolean(event.payload.is_correct),
-        tiempo_respuesta_ms: Number(event.payload.elapsed_millis),
-        respondido_en: respondedAt,
-      }, { onConflict: "id_intento" });
-      if (attemptError) return new Response(JSON.stringify({ error: attemptError.message }), { status: 422, headers: corsHeaders });
-    }
-  }
-
-  return new Response(JSON.stringify({ synchronized: events.length }), {
-    status: 200,
+  // One transaction covers the entire batch, including plans and diagnostic reports.
+  const { data, error } = await authenticatedClient.rpc("sincronizar_aprendizaje", { p_events: events });
+  const knownErrors = ["El perfil no pertenece a esta cuenta", "La sesion no corresponde al perfil", "Informe de diagnostico invalido", "Actividad docente no disponible", "Plan de ejercicios invalido", "Lote de sincronizacion invalido"];
+  return new Response(JSON.stringify(error ? {
+    error: error.message,
+    error_code: error.code,
+    error_kind: knownErrors.includes(error.message) ? error.message : "otro",
+  } : data), {
+    status: error ? 422 : 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });

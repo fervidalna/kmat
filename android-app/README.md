@@ -116,3 +116,21 @@ Las pruebas instrumentadas en `app/src/androidTest` cubren el reconocimiento de 
 - [Autenticación](docs/AUTENTICACION.md)
 - [Navegación](docs/NAVEGACION.md)
 - [Modo offline y sincronización](docs/OFFLINE_FIRST.md)
+
+## Probar la voz Gemini en la pausa activa
+
+La app solicita la frase de la pausa a una Edge Function autenticada de Supabase. La clave de Gemini se guarda únicamente como secreto del backend; no la agregues a Gradle, al APK ni al repositorio.
+
+1. En Google AI Studio crea una clave para Gemini API.
+2. En Supabase Dashboard, abre **Project Settings > Edge Functions > Secrets** y agrega `GEMINI_API_KEY` con esa clave.
+3. Desde la raíz del repositorio, con Supabase CLI enlazado al proyecto, despliega la función:
+
+   ```powershell
+   npx supabase functions deploy gemini-pause-voice
+   ```
+
+4. Inicia sesión en K-Mat, abre una práctica, toca **Pausa** y después **Escuchar: ¡Vamos, ahora a saltar!**.
+
+La generación necesita Internet y el proyecto Supabase debe estar configurado en Gradle como se indica arriba. Si Gemini no está configurado o no responde, la pausa visual sigue funcionando y la app muestra el error para poder revisar la conexión.
+
+La frase se genera una vez por instalación y se guarda en los archivos privados de la app. Las reproducciones siguientes usan ese archivo local, incluso sin conexión, y no vuelven a llamar a Gemini. La voz está configurada como Puck (tono animado); el texto enviado para hablar es solo «¡Vamos, ahora a saltar!», con indicaciones de estilo separadas en los metadatos TTS.

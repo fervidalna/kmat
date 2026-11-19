@@ -5,6 +5,7 @@ import cl.kmat.ia.domain.model.ManagedAccount
 import cl.kmat.ia.domain.model.ManagedAccountActionResult
 import cl.kmat.ia.domain.model.ManagedAccountsResult
 import cl.kmat.ia.domain.model.PasswordResetResult
+import cl.kmat.ia.domain.model.UserArea
 import cl.kmat.ia.domain.repository.AuthRepository
 import cl.kmat.ia.domain.repository.ManagedAccountsRepository
 import kotlinx.coroutines.Dispatchers
@@ -45,12 +46,13 @@ class SupabaseManagedAccountsRepository(
         }.getOrElse { ManagedAccountsResult.NetworkError }
     }
 
-    override suspend fun deleteAccount(accountId: String): ManagedAccountActionResult {
+    override suspend fun deleteAccount(accountId: String): ManagedAccountActionResult = withContext(Dispatchers.IO) {
         if (BuildConfig.SUPABASE_URL.isBlank() || BuildConfig.SUPABASE_ANON_KEY.isBlank()) {
-            return ManagedAccountActionResult.NotConfigured
+            return@withContext ManagedAccountActionResult.NotConfigured
         }
-        val token = authRepository.validAccessTokenOrNull() ?: return ManagedAccountActionResult.Unauthorized
-        return runCatching {
+        val token = authRepository.validAccessTokenOrNull()
+            ?: return@withContext ManagedAccountActionResult.Unauthorized
+        runCatching {
             val response = request(
                 "/rest/v1/rpc/eliminar_cuenta_admin",
                 JSONObject().put("p_id_usuario", accountId).toString(),
@@ -59,10 +61,50 @@ class SupabaseManagedAccountsRepository(
             when {
                 response.code in 200..299 && response.body.trim() == "true" -> ManagedAccountActionResult.Success
                 response.code in 200..299 && response.body.trim() == "false" -> ManagedAccountActionResult.NotFound
-                response.code == 401 || response.code == 403 -> ManagedAccountActionResult.Unauthorized
-                else -> ManagedAccountActionResult.NetworkError
+                response.code == 401 -> ManagedAccountActionResult.Unauthorized
+                else -> ManagedAccountActionResult.Failed(
+                    "Supabase respondió HTTP ${response.code}: ${describeError(response.body)}"
+                )
             }
-        }.getOrElse { ManagedAccountActionResult.NetworkError }
+        }.getOrElse { error ->
+            ManagedAccountActionResult.Failed(
+                "No se pudo completar la solicitud (${error.javaClass.simpleName}): " +
+                    (error.message?.takeIf { it.isNotBlank() } ?: "error sin detalle")
+            )
+        }
+    }
+
+    override suspend fun changeRole(accountId: String, area: UserArea): ManagedAccountActionResult = withContext(Dispatchers.IO) {
+        val role = when (area) {
+            UserArea.LEARNING -> "RESPONSABLE"
+            UserArea.TEACHING -> "DOCENTE"
+            UserArea.ADMINISTRATION -> return@withContext ManagedAccountActionResult.NetworkError
+        }
+        if (BuildConfig.SUPABASE_URL.isBlank() || BuildConfig.SUPABASE_ANON_KEY.isBlank()) {
+            return@withContext ManagedAccountActionResult.NotConfigured
+        }
+        val token = authRepository.validAccessTokenOrNull()
+            ?: return@withContext ManagedAccountActionResult.Unauthorized
+        runCatching {
+            val response = request(
+                "/rest/v1/rpc/cambiar_rol_cuenta_admin",
+                JSONObject().put("p_id_usuario", accountId).put("p_codigo_rol", role).toString(),
+                token
+            )
+            when {
+                response.code in 200..299 && response.body.trim() == "true" -> ManagedAccountActionResult.Success
+                response.code in 200..299 && response.body.trim() == "false" -> ManagedAccountActionResult.NotFound
+                response.code == 401 -> ManagedAccountActionResult.Unauthorized
+                else -> ManagedAccountActionResult.Failed(
+                    "Supabase respondió HTTP ${response.code}: ${describeError(response.body)}"
+                )
+            }
+        }.getOrElse { error ->
+            ManagedAccountActionResult.Failed(
+                "No se pudo completar la solicitud (${error.javaClass.simpleName}): " +
+                    (error.message?.takeIf { it.isNotBlank() } ?: "error sin detalle")
+            )
+        }
     }
 
     override suspend fun requestPasswordReset(email: String): PasswordResetResult =
@@ -89,6 +131,18 @@ class SupabaseManagedAccountsRepository(
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun describeError(body: String): String {
+        val trimmed = body.trim()
+        if (trimmed.isEmpty()) return "el servidor no entregó detalles."
+        val parsed = runCatching {
+            val json = JSONObject(trimmed)
+            listOf("message", "details", "hint", "code")
+                .mapNotNull { key -> json.optString(key).takeIf { it.isNotBlank() && it != "null" } }
+                .joinToString(" | ")
+        }.getOrNull()
+        return (parsed?.takeIf { it.isNotBlank() } ?: trimmed).take(600)
     }
 
     private data class HttpResponse(val code: Int, val body: String)

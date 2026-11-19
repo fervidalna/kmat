@@ -87,8 +87,8 @@ class DiagnosticAssessmentEngine {
 
     private fun choose(bank: List<Exercise>, axis: String, difficulty: Int, schoolLevel: String, used: Set<String>): Exercise? {
         val available = bank.filter { it.axis == axis && it.difficulty == difficulty && it.id !in used }
-        if (available.isNotEmpty()) return available.random()
-        return bank.filter { it.axis == axis && it.id !in used }
+        if (available.isNotEmpty()) return available.minByOrNull { it.id }
+        return bank.filter { it.axis == axis && it.id !in used }.sortedBy { it.id }
             .minByOrNull { kotlin.math.abs(it.difficulty - difficulty) }
     }
 

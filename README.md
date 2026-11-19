@@ -1,38 +1,39 @@
 # K-Mat IA
 
-K-Mat es una aplicación Android de refuerzo matemático para estudiantes de 1.º y 2.º básico. No se limita a mostrar ejercicios para responder escribiendo números con el teclado: el niño puede resolverlos escribiendo su respuesta a mano, con el dedo o un lápiz digital, directamente en la pantalla.
+K-Mat IA es una aplicación Android de apoyo al aprendizaje matemático para estudiantes de 1.º y 2.º básico. El prototipo combina perfiles de estudiantes, diagnóstico inicial, práctica con escritura digital y herramientas para responsables, docentes y administradores.
 
-La app utiliza **Google ML Kit Digital Ink Recognition** para interpretar los trazos reales del niño en el lienzo y reconocer el número escrito. Así, la respuesta se basa en su escritura manuscrita, no en texto ingresado por teclado ni en una fotografía procesada por OCR. Actualmente, esta experiencia está implementada en el ejercicio de demostración `1 + 1`.
+La respuesta manuscrita se captura en un lienzo y se reconoce con **Google ML Kit Digital Ink Recognition**. El reconocimiento procesa trazos realizados con el dedo o un lápiz digital; no usa la cámara ni OCR de fotografías.
 
-El proyecto se encuentra en una etapa de MVP funcional. La práctica actual se concentra en el primer ejercicio, `1 + 1`, y sirve como base para ampliar el catálogo de actividades y la adaptación pedagógica.
+## Estado actual del prototipo
 
-## Estado actual
-
-| Módulo | Estado | Alcance actual |
+| Módulo | Estado | Alcance disponible |
 | --- | --- | --- |
-| Inicio de sesión y registro | Implementado | Autenticación con Supabase, registro de responsables, recuperación de contraseña y cierre de sesión. |
-| Roles | Implementado parcialmente | Se resuelve el área de responsable, docente o administración desde la base de datos. Las áreas de docente y administración son pantallas iniciales. |
-| Inicio del estudiante | Implementado | Pantalla de bienvenida, navegación adaptable para celular y tableta, y perfil de demostración de Tomás. |
-| Ejercicio `1 + 1` | Implementado | El niño escribe con dedo o lápiz digital; la app reconoce el número, lo valida y guarda el intento. |
-| Reconocimiento de escritura | Implementado | Usa Google ML Kit Digital Ink con el modelo español. Reconoce trazos de números escritos en el lienzo; no usa cámara ni OCR de imágenes. |
-| Trabajo sin conexión | Implementado para la práctica | El ejercicio, las sesiones, los intentos, los trazos y las métricas se guardan primero en Room en el dispositivo. El modelo de escritura debe descargarse una vez. |
-| Sincronización | Implementación base | Una cola local envía sesiones e intentos a una Edge Function de Supabase cuando hay red y la configuración remota está disponible. |
-| Base de datos | Implementado | Esquema relacional, reglas de acceso, migraciones, población inicial de ejemplo y función de sincronización. |
-| Diagnóstico, progreso y configuración | Navegación creada | Las pantallas muestran la ruta prevista, pero todavía no presentan datos reales ni lógica pedagógica completa. |
-| Pausas activas y retroalimentación | Interfaz creada | Existe el flujo visual; faltan detección/seguimiento de la actividad y mensajes basados en cada intento. |
+| Acceso de usuarios | Implementado | Inicio de sesión y registro público de cuentas de responsable o docente mediante Supabase Auth. Los estudiantes usan perfiles vinculados a un adulto y no tienen contraseña propia. |
+| Perfiles de estudiantes | Implementado | Creación, consulta, selección y eliminación de perfiles de 1.º y 2.º básico. El responsable puede vincular un perfil a una sala con el código entregado por el docente. |
+| Diagnóstico inicial | Implementado | Presenta preguntas desde el banco disponible, adapta algunas preguntas de seguimiento por eje y muestra un resumen del resultado. Su alcance depende de los ejercicios configurados. |
+| Práctica matemática | MVP funcional | Permite resolver ejercicios disponibles con trazos en pantalla, reconocer la respuesta, mostrar el resultado y registrar intentos. El ejercicio de demostración `1 + 1` forma parte del catálogo actual; la cobertura de contenidos todavía es acotada. |
+| Progreso del estudiante | Implementado | Consulta resultados por materia, respuestas correctas e incorrectas, tiempo promedio e historial disponible. |
+| Espacio docente | Implementado | Crear salas, compartir códigos de unión, consultar estudiantes vinculados, revisar progreso individual y grupal, asignar actividades de refuerzo disponibles y exportar reportes individuales en PDF. |
+| Administración | Implementado parcialmente | Consultar cuentas, cambiar entre roles de responsable y docente, enviar instrucciones de cambio de contraseña y eliminar cuentas. |
+| Persistencia local y uso sin conexión | Implementado para la práctica | Room conserva ejercicios disponibles, sesiones e intentos en el dispositivo. La práctica sin conexión requiere que los datos necesarios y el modelo de escritura estén disponibles localmente. |
+| Sincronización | Implementación disponible, dependiente del entorno | WorkManager envía eventos pendientes a una Edge Function de Supabase cuando hay conexión y el backend está configurado. Si el envío falla, los datos locales se conservan para reintentar. |
+| Adaptación del aprendizaje | Parcial | El diagnóstico adapta preguntas de seguimiento. La adaptación continua de toda la trayectoria, la selección amplia de contenidos y el refuerzo automático aún no están completos. |
 
-## Flujo disponible
+Las pantallas de preferencias y algunos flujos complementarios muestran la navegación prevista y todavía no representan funcionalidades completas. El prototipo tampoco debe interpretarse como un catálogo amplio de ejercicios ni como un sistema de adaptación pedagógica integral.
+
+## Flujo principal
 
 ```mermaid
 flowchart LR
-    A[Inicio de sesión] --> B[Perfil de estudiante]
-    B --> C[Ejercicio 1 + 1]
-    C --> D[Escritura en el lienzo]
-    D --> E[ML Kit reconoce el número]
-    E --> F[Validación y guardado local]
-    F --> G{¿Hay conexión y Supabase configurado?}
-    G -->|Sí| H[Sincronización en Supabase]
-    G -->|No| I[Cola local para reintento]
+    A[Adulto inicia sesión] --> B[Selecciona o crea perfil]
+    B --> C[Diagnóstico inicial]
+    C --> D[Práctica disponible]
+    D --> E[Estudiante escribe en pantalla]
+    E --> F[ML Kit reconoce la respuesta]
+    F --> G[Corrección y registro local]
+    G --> H{¿Hay conexión y Supabase configurado?}
+    H -->|Sí| I[Sincronización de eventos pendientes]
+    H -->|No| J[Datos conservados en el dispositivo]
 ```
 
 ## Arquitectura
@@ -40,40 +41,40 @@ flowchart LR
 La aplicación Android está organizada por capas:
 
 ```text
-Interfaz Compose → ViewModel → Casos de uso → Repositorios
-                                              ├─ Room (datos locales)
-                                              ├─ ML Kit Digital Ink (escritura)
-                                              └─ Supabase (autenticación y sincronización)
+Interfaz Jetpack Compose → ViewModels → Casos de uso → Repositorios
+                                                   ├─ Room (persistencia local)
+                                                   ├─ ML Kit Digital Ink (reconocimiento de trazos)
+                                                   └─ Supabase (autenticación y servicios remotos)
 ```
 
-La estructura principal del repositorio es:
+Estructura principal del repositorio:
 
 ```text
-android-app/    Aplicación Kotlin, Jetpack Compose, Room y pruebas Android
+android-app/    Aplicación Android en Kotlin, interfaz Compose y pruebas instrumentadas
 supabase/       Migraciones SQL, Edge Function y documentación de datos
 Mockups/        Referencias visuales de las pantallas
 ```
 
 ## Tecnologías
 
-- Kotlin y Jetpack Compose con Material 3.
+- Kotlin, Jetpack Compose y Material 3.
 - Android SDK 35; mínimo Android 8.0 (API 26).
 - Room para persistencia local.
 - WorkManager para sincronización diferida.
-- Google ML Kit Digital Ink Recognition para reconocer números escritos a mano.
+- Google ML Kit Digital Ink Recognition para reconocer trazos manuscritos.
 - Supabase Auth, PostgreSQL con RLS y Edge Functions.
 
-## Ejecutar la app
+## Ejecutar la aplicación
 
-1. Abre [android-app](android-app) en Android Studio.
+1. Abre la carpeta [android-app](android-app) en Android Studio.
 2. Usa el JDK integrado de Android Studio y sincroniza Gradle.
 3. Ejecuta la aplicación en un dispositivo o emulador con Android 8.0 o superior.
 
-Durante una práctica ya iniciada, la corrección y el guardado local no dependen de la red una vez descargado el modelo de escritura. El inicio de sesión, el registro y la sincronización requieren configurar Supabase. Consulta la guía de [Android](android-app/README.md) y la [documentación de base de datos](supabase/DOCUMENTACION_BASE_DE_DATOS.md).
+Para probar autenticación, perfiles y servicios remotos, configura Supabase. La práctica puede guardar resultados localmente; el acceso a los servicios remotos y la sincronización requieren conectividad y la configuración correspondiente. Consulta la [guía de Android](android-app/README.md) y la [documentación de la base de datos](supabase/DOCUMENTACION_BASE_DE_DATOS.md).
 
 ## Configuración de Supabase
 
-Las migraciones están en [supabase/migrations](supabase/migrations). Se aplican por fecha, en este orden:
+Las migraciones de [supabase/migrations](supabase/migrations) se aplican en orden cronológico:
 
 1. `20260930160000_kmat_schema.sql`
 2. `20261001235500_area_usuario_autenticado.sql`
@@ -82,42 +83,55 @@ Las migraciones están en [supabase/migrations](supabase/migrations). Se aplican
 5. `20261018001000_saludo_estudiante_vinculado.sql`
 6. `20261020001000_gestion_perfiles_responsable.sql`
 7. `20261020002000_niveles_basica.sql`
+8. `20261024001000_listar_cuentas_administrador.sql`
+9. `20261024002000_listar_estudiantes_responsable_seguro.sql`
+10. `20261024003000_permisos_lectura_perfiles.sql`
+11. `20261024004000_eliminar_perfil_responsable.sql`
+12. `20261024005000_borrado_definitivo_estudiante.sql`
+13. `20261024006000_gestion_cuentas_admin.sql`
+14. `20261025001000_herramientas_docente.sql`
+15. `20261025002000_progreso_docente_por_sesion.sql`
+16. `20261106001000_sincronizacion_multidispositivo.sql`
+17. `20261110001000_progreso_docente_por_materia.sql`
+18. `20261110002000_nivel_desempeno_reporte_docente.sql`
+19. `20261110003000_eliminar_sala_docente.sql`
+20. `20261112001000_registro_roles_y_cambio_admin.sql`
+21. `20261116001000_perfil_automatico_cambio_rol.sql`
 
-El archivo [poblacion_inicial_mvp.sql](supabase/poblacion_inicial_mvp.sql) agrega roles, catálogos y datos de demostración. Antes de ejecutarlo se deben crear en Supabase Authentication los usuarios de ejemplo que el mismo archivo indica.
+El archivo [poblacion_inicial_mvp.sql](supabase/poblacion_inicial_mvp.sql) agrega roles, catálogos y datos de demostración. Antes de ejecutarlo, crea en Supabase Authentication los usuarios de ejemplo indicados en ese archivo.
 
-Para desarrollo, las propiedades de conexión de Android se pueden definir en `%USERPROFILE%\.gradle\gradle.properties`:
+Para desarrollo, define las propiedades de conexión en `%USERPROFILE%\.gradle\gradle.properties`:
 
 ```properties
 SUPABASE_URL=https://TU_PROYECTO.supabase.co
 SUPABASE_ANON_KEY=tu_clave_anon_publica
-SUPABASE_STUDENT_ID=uuid_del_estudiante
-SUPABASE_EXERCISE_VERSION_ID=uuid_de_la_version_del_ejercicio
+SUPABASE_EXERCISE_VERSION_ID=uuid_de_la_version_publicada_del_ejercicio
 ```
 
-La clave `service_role` pertenece exclusivamente al entorno de la Edge Function; nunca debe ir en la aplicación Android ni en el repositorio.
+La clave `service_role` pertenece exclusivamente al entorno de la Edge Function; no debe incluirse en la aplicación Android ni subirse al repositorio.
 
-## Pruebas realizadas
+## Pruebas instrumentadas
 
-Hay pruebas instrumentadas para el reconocimiento de escritura y la pantalla de práctica. Se verificó la escritura de los números `2` y `4`, el reconocimiento de `2` para resolver `1 + 1`, la limpieza del lienzo, la validación de la respuesta y la visualización de controles en teléfono vertical, teléfono horizontal y tableta.
-
-Desde `android-app`, se ejecutan con:
+El repositorio contiene pruebas instrumentadas para perfiles, espacio docente, diagnóstico, práctica, reconocimiento de escritura y audio de cierre de sesión. Para ejecutarlas desde `android-app`:
 
 ```powershell
 .\gradlew.bat connectedDebugAndroidTest
 ```
 
+Las pruebas instrumentadas requieren un emulador o dispositivo Android conectado.
+
 ## Próximos avances
 
-- Incorporar más ejercicios y seleccionar el perfil real del estudiante.
-- Construir diagnóstico, progreso, retroalimentación y pausas activas con datos reales.
-- Completar las herramientas de responsables, docentes y administración.
-- Vincular el catálogo de ejercicios remoto y validar la sincronización completa en un entorno desplegado.
-- Agregar adaptación de dificultad, recursos de apoyo y reportes de progreso.
+- Ampliar el catálogo de ejercicios y contenidos disponibles.
+- Completar la adaptación de la trayectoria de aprendizaje y los refuerzos.
+- Ampliar las herramientas de responsables y las operaciones de administración de usuarios.
+- Validar la sincronización integral en un entorno Supabase desplegado y con varios perfiles por cuenta.
+- Completar preferencias, pausas activas y demás flujos complementarios.
 
 ## Documentación relacionada
 
 - [Arquitectura Android](android-app/docs/ARQUITECTURA.md)
 - [Autenticación](android-app/docs/AUTENTICACION.md)
-- [Operación offline y sincronización](android-app/docs/OFFLINE_FIRST.md)
+- [Operación sin conexión y sincronización](android-app/docs/OFFLINE_FIRST.md)
 - [Navegación](android-app/docs/NAVEGACION.md)
 - [Modelo y operación de base de datos](supabase/DOCUMENTACION_BASE_DE_DATOS.md)
